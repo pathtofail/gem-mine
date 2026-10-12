@@ -1,0 +1,1534 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>Gem Mine</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #120d09; overflow: hidden; overscroll-behavior: none; }
+  body {
+    height: 100vh; height: 100dvh; box-sizing: border-box;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+    touch-action: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
+  }
+  canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+'use strict';
+
+/* =====================================================================
+   GEM MINE  -  prototype
+
+   Goal: fill one mine cart per gem color. A cart is SEALED the moment it
+   holds a full load (CART_CAP gems) of a single color.
+
+   - Locked reserve lanes feed gems onto the conveyor belt (tap to unlock).
+   - Every cart has a gate on top. Gate on IN: the cart catches gems of its
+     top color (or any color if empty) as they pass underneath.
+   - Tap OUT: the cart's top color goes out onto the belt in full and the
+     gate falls back to IN.
+   - The belt holds a limited number of gems. Time is limited.
+   ===================================================================== */
+
+// ---------- Tunables ----------
+const CFG = {
+  CART_CAP: 100,   // gems per cart (a sealed cart holds exactly this many of one color)
+  BELT_CAP: 200,   // set per level
+  SPEED: 9,        // belt gems per second, set per level
+  UNDOS: 3,
+};
+
+const COLORS = {
+  R: { name: 'Ruby',     l: '#ffa3b5', c: '#f2405f', d: '#85112e', glow: '255,70,100',  shape: 'dia' },
+  B: { name: 'Sapphire', l: '#a9d0ff', c: '#3f86f5', d: '#16399a', glow: '70,140,255',  shape: 'hex' },
+  G: { name: 'Emerald',  l: '#9af5c4', c: '#1fc96f', d: '#0a683a', glow: '40,220,120',  shape: 'sq'  },
+  Y: { name: 'Topaz',    l: '#fff0a0', c: '#ffb71f', d: '#a35f00', glow: '255,190,50',  shape: 'tri' },
+  P: { name: 'Amethyst', l: '#e6bcff', c: '#a65cf0', d: '#4a1c8a', glow: '175,100,255', shape: 'pent' },
+};
+const COLOR_KEYS = ['R', 'B', 'G', 'Y', 'P'];
+
+// carts: segments listed bottom -> top. lanes: one color each (null = no lane in that column).
+// Every color must total CART_CAP across carts + lanes so each one can be sealed.
+const LEVEL_COUNT = 50;
+
+// Level 1 is hand-made (it teaches the controls). Levels 2-50 come from a seeded generator whose difficulty
+// ramps with the level number. Every level was checked with a bot before its seed/time were stored below.
+function rngFor(seed) {
+  let a = seed >>> 0;
+  return () => { a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+}
+const ADJ = ['Copper', 'Silver', 'Golden', 'Deep', 'Dusty', 'Glowing', 'Flooded', 'Echo', 'Crystal', 'Iron'];
+const NOUN = ['Tunnel', 'Shaft', 'Vein', 'Cavern', 'Seam', 'Pit', 'Drift', 'Hollow', 'Lode', 'Gallery'];
+
+function makeLevel(idx, attempt) {
+  const rnd = rngFor(idx * 7919 + attempt * 104729 + 13);
+  const shuffled = arr => { const a = arr.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+  const d = idx / (LEVEL_COUNT - 1);                       // 0..1 difficulty
+  const r10 = v => Math.round(v / 10) * 10;
+  const nColors = idx < 8 ? 3 : idx < 28 ? 4 : 5;
+  const spare = (d > 0.7 && rnd() < 0.4) ? 0 : 1;          // some late levels have no spare cart
+  const nCarts = Math.min(6, nColors + spare);
+  const keys = shuffled(COLOR_KEYS).slice(0, nColors);
+
+  // reserve lanes: one color each; the share of gems that start in lanes shrinks as levels get harder
+  const laneFrac = 0.55 - 0.27 * d;
+  const laneAmt = {};
+  keys.forEach(k => { laneAmt[k] = Math.max(20, Math.min(80, r10(100 * laneFrac * (0.6 + 0.8 * rnd())))); });
+  let lanes = [];
+  keys.forEach(k => {
+    const a = laneAmt[k];
+    if (a >= 60 && lanes.length + 1 < nCarts && rnd() < 0.3 + 0.3 * d) { const part = r10(a * (0.35 + 0.3 * rnd())) || 20; lanes.push([k, part], [k, a - part]); }
+    else lanes.push([k, a]);
+  });
+  if (lanes.length > nCarts) return null;
+  lanes = shuffled(lanes);
+  while (lanes.length < nCarts) lanes.push(null);
+
+  // the rest of every color starts mixed inside the carts, in more and smaller pieces on harder levels
+  let pieces = [];
+  keys.forEach(k => {
+    let rem = 100 - laneAmt[k];
+    const want = 1 + Math.floor(rnd() * (1 + d * 3.2));
+    for (let n = 0; n < want - 1 && rem >= 20; n++) { const part = Math.max(10, Math.min(rem - 10, r10(rem * (0.3 + 0.4 * rnd())))); pieces.push([k, part]); rem -= part; }
+    pieces.push([k, rem]);
+  });
+  pieces = shuffled(pieces);
+  const total = pieces.reduce((a, p2) => a + p2[1], 0);
+  const fillable = spare ? nCarts - 1 : nCarts;
+  const used = Math.max(1, Math.min(fillable, Math.ceil(total / (80 - 20 * d))));
+  const loads = new Array(used).fill(0), stacks = Array.from({ length: used }, () => []);
+  for (const pc of pieces) {
+    let best = -1;
+    for (let c = 0; c < used; c++) if (loads[c] + pc[1] <= 90 && (best < 0 || loads[c] < loads[best])) best = c;
+    if (best < 0) return null;
+    const st = stacks[best], top = st[st.length - 1];
+    if (top && top[0] === pc[0]) top[1] += pc[1]; else st.push([pc[0], pc[1]]);
+    loads[best] += pc[1];
+  }
+  const carts = stacks.slice();
+  while (carts.length < nCarts) carts.splice(Math.floor(rnd() * (carts.length + 1)), 0, []);
+
+  const maxLane = Math.max(...lanes.filter(Boolean).map(l => l[1]));
+  const maxTop = Math.max(...carts.map(c => c.length ? c[c.length - 1][1] : 0));
+  let beltCap = Math.floor((160 - 70 * d + (rnd() * 20 - 10)) / 10) * 10;
+  beltCap = Math.max(beltCap, 70, maxLane + 10, maxTop + 10);
+  const speed = Math.round(beltCap / (12 - 2.5 * d) * 10) / 10;
+  // harder levels offer a spare cart that costs coins. The level is solvable without it; it just makes things easier.
+  let locked = null;
+  if (idx >= 14) {
+    const price = Math.round((15 + idx * 0.9) / 5) * 5;
+    if (carts.length <= 5) { carts.push([]); lanes.push(null); locked = { index: carts.length - 1, price }; }
+    else { let e = -1; carts.forEach((c, i) => { if (!c.length) e = i; }); if (e >= 0) locked = { index: e, price }; }
+  }
+  return { name: `${ADJ[idx % 10]} ${NOUN[(idx * 7 + 3) % 10]}`, time: 120, beltCap, speed, carts, lanes, colorsN: nColors, locked };
+}
+
+// seeds and time limits chosen by the bot check (see the notes at the top of this file)
+const SEEDS = [0, 34, 15, 7, 7, 21, 33, 1, 32, 24, 19, 15, 31, 25, 4, 34, 13, 17, 12, 31, 21, 7, 9, 5, 25, 37, 25, 30, 16, 0, 9, 34, 25, 19, 17, 16, 38, 22, 17, 33, 5, 3, 21, 134, 102, 34, 93, 29, 82, 74];
+const CAPS = [0, 140, 130, 140, 130, 130, 120, 120, 130, 130, 130, 130, 120, 120, 130, 130, 110, 110, 110, 100, 130, 110, 90, 120, 110, 110, 110, 120, 120, 120, 100, 120, 100, 130, 160, 110, 130, 110, 90, 100, 120, 110, 80, 100, 90, 90, 100, 80, 90, 90];     // belt size per level, calibrated with the bots (empty = use the generator's own formula)
+const TIMES = [240, 115, 210, 145, 135, 115, 145, 105, 130, 175, 140, 125, 150, 145, 145, 155, 185, 125, 195, 160, 175, 305, 230, 155, 155, 150, 240, 230, 225, 220, 205, 120, 210, 190, 135, 115, 185, 100, 105, 170, 205, 170, 360, 350, 200, 270, 235, 355, 240, 310];
+
+const LEVELS = [{
+  name: 'Warm-up', time: 240, beltCap: 100, speed: 8.5,
+  carts: [ [['R', 40], ['B', 30]], [['B', 30], ['G', 40]], [], [] ],
+  lanes: [ ['R', 60], ['B', 40], ['G', 60], null ],
+}];
+for (let i = 1; i < LEVEL_COUNT; i++) {
+  let lv = null, a = SEEDS[i] || 0;
+  while (!(lv = makeLevel(i, a))) a++;
+  if (TIMES[i]) lv.time = TIMES[i];
+  if (CAPS[i]) { lv.beltCap = CAPS[i]; lv.speed = Math.round(CAPS[i] / (12 - 2.5 * (i / (LEVEL_COUNT - 1))) * 10) / 10; }
+  LEVELS.push(lv);
+}
+
+// ---------- Canvas / layout ----------
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+let W = 0, H = 0, dpr = 1, offX = 0, offY = 0, LW = 0, LH = 0, scale = 1, Q = 1;
+let VX0 = 0, VY0 = 0, VW = 390, VH = 844;   // the whole screen, in board units
+let lay = null;
+let P = 1;
+let beltPath = null;
+let segs = [];
+const BW = 36;       // belt thickness
+let GEM_R = 10;      // gem radius, shared by carts and belt
+let CART_COLS = 3;
+let S = null;
+
+const mod = (a, n) => ((a % n) + n) % n;
+const sum = (arr, f) => arr.reduce((a, x) => a + f(x), 0);
+const hash = n => { const h = Math.sin(n * 12.9898) * 43758.5453; return h - Math.floor(h); };
+
+function buildGeometry(x0, y0, x1, y1, r) {
+  segs = [];
+  const add = (type, o) => segs.push(Object.assign({ type }, o));
+  add('line', { ax: x0 + r, ay: y0, bx: x1 - r, by: y0 });
+  add('arc',  { cx: x1 - r, cy: y0 + r, r, a0: -Math.PI / 2, a1: 0 });
+  add('line', { ax: x1, ay: y0 + r, bx: x1, by: y1 - r });
+  add('arc',  { cx: x1 - r, cy: y1 - r, r, a0: 0, a1: Math.PI / 2 });
+  add('line', { ax: x1 - r, ay: y1, bx: x0 + r, by: y1 });
+  add('arc',  { cx: x0 + r, cy: y1 - r, r, a0: Math.PI / 2, a1: Math.PI });
+  add('line', { ax: x0, ay: y1 - r, bx: x0, by: y0 + r });
+  add('arc',  { cx: x0 + r, cy: y0 + r, r, a0: Math.PI, a1: Math.PI * 1.5 });
+  let acc = 0;
+  for (const s of segs) {
+    s.len = s.type === 'line' ? Math.hypot(s.bx - s.ax, s.by - s.ay) : s.r * Math.PI / 2;
+    s.start = acc; acc += s.len;
+  }
+  P = acc;
+  const p = new Path2D();
+  p.moveTo(x0 + r, y0);
+  p.lineTo(x1 - r, y0);
+  p.arc(x1 - r, y0 + r, r, -Math.PI / 2, 0);
+  p.lineTo(x1, y1 - r);
+  p.arc(x1 - r, y1 - r, r, 0, Math.PI / 2);
+  p.lineTo(x0 + r, y1);
+  p.arc(x0 + r, y1 - r, r, Math.PI / 2, Math.PI);
+  p.lineTo(x0, y0 + r);
+  p.arc(x0 + r, y0 + r, r, Math.PI, Math.PI * 1.5);
+  p.closePath();
+  beltPath = p;
+}
+
+function pointAt(s) {
+  s = mod(s, P);
+  for (const g of segs) {
+    if (s <= g.start + g.len) {
+      const t = (s - g.start) / g.len;
+      if (g.type === 'line') return { x: g.ax + (g.bx - g.ax) * t, y: g.ay + (g.by - g.ay) * t };
+      const a = g.a0 + (g.a1 - g.a0) * t;
+      return { x: g.cx + Math.cos(a) * g.r, y: g.cy + Math.sin(a) * g.r };
+    }
+  }
+  const g = segs[0];
+  return { x: g.ax, y: g.ay };
+}
+
+const unitsToPx = u => u / CFG.BELT_CAP * P;
+const pxToUnits = s => s / P * CFG.BELT_CAP;
+
+function resize() {
+  dpr = Math.min(window.devicePixelRatio || 1, 3);
+  const rect = cv.getBoundingClientRect();
+  W = Math.max(1, rect.width); H = Math.max(1, rect.height);
+  cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
+  // The board always has the same internal size (390 x 844) and is scaled to fit the screen. That keeps the
+  // belt geometry, and so the gate positions and level difficulty, identical on every device. The cave
+  // background fills whatever screen space is left over.
+  LW = 390; LH = 844;
+  scale = Math.min(W / LW, H / LH);
+  offX = (W - LW * scale) / 2; offY = (H - LH * scale) / 2;
+  Q = dpr * scale;
+  VX0 = -offX / scale; VY0 = -offY / scale; VW = W / scale; VH = H / scale;
+  gemSprites.clear();
+  makeBackground();
+  if (!S) return;
+
+  const L = LEVELS[S.level];
+  const hudH = 74;
+  const lanesH = LH < 700 ? 100 : LH > 820 ? 136 : 118;
+  const x0 = BW / 2 + 5, x1 = LW - BW / 2 - 5;
+  const y0 = hudH + BW / 2 + 8;
+  const y1 = LH - 14 - lanesH - 16 - BW / 2;
+  const r = 30;
+  buildGeometry(x0, y0, x1, y1, r);
+
+  const n = L.carts.length, gap = 8;
+  const innerL = x0 + BW / 2 + 6, innerR = x1 - BW / 2 - 6;
+  const cw = (innerR - innerL - gap * (n - 1)) / n;
+  GEM_R = Math.min(11, (cw - 8) / 3 * 0.64);
+  CART_COLS = Math.max(3, Math.round((cw - 8) / (GEM_R * 1.55)));
+  const colX = i => innerL + i * (cw + gap);
+  const gateY = y0 + BW / 2 + 6;
+  const gateH = 30;
+  const btnH = 46;
+  const bodyY = gateY + gateH + 4;
+  const btnY = y1 - BW / 2 - 8 - btnH;
+  const bodyB = btnY - 8;
+  lay = {
+    hudH, lanesH, x0, x1, y0, y1, r, n, cw, gap, gateY, gateH, btnY, btnH, bodyY, bodyH: bodyB - bodyY,
+    colX, cx: i => colX(i) + cw / 2,
+    lanesTop: y1 + BW / 2 + 16,
+  };
+}
+
+// ---------- Game state ----------
+let last = 0;
+
+// This game is silent on purpose: no sound effects or music.
+const buzz = ms => { try { if (navigator.vibrate) navigator.vibrate(ms); } catch (e) {} };
+
+// ---------- Progress (kept in the browser; the game works without it) ----------
+const SAVE_KEY = 'gemmine.v1';
+function loadSave() {
+  try {
+    const o = JSON.parse(localStorage.getItem(SAVE_KEY));
+    if (o && o.stars) { o.coins = o.coins || 0; o.owned = o.owned || {}; return o; }
+  } catch (e) {}
+  return { unlocked: 1, stars: {}, coins: 0, owned: {} };
+}
+const SAVE = loadSave();
+function saveSave() { if (window.__sim) return; try { localStorage.setItem(SAVE_KEY, JSON.stringify(SAVE)); } catch (e) {} }
+const DEBUG_COINS = parseInt(new URLSearchParams(location.search).get('coins'), 10);
+if (DEBUG_COINS > 0) SAVE.coins = DEBUG_COINS;      // ?coins=200 for testing, never written to the save
+
+// Coins for finishing a level. First clear pays in full; replays pay a quarter plus a bonus for improving the stars.
+function levelReward(level, stars, first) {
+  const base = 10 + Math.round(level * 1.2);
+  return first ? base + stars * 5 : Math.round(base * 0.25) + Math.max(0, stars - (SAVE.stars[level] || 0)) * 5;
+}
+const DEBUG_UNLOCK = new URLSearchParams(location.search).has('level');
+const isUnlocked = i => DEBUG_UNLOCK || i < SAVE.unlocked;
+
+function loadLevel(i) {
+  const L = LEVELS[i];
+  CFG.BELT_CAP = L.beltCap; CFG.SPEED = L.speed;
+  const colors = [];
+  [...L.carts.flat(), ...L.lanes.filter(Boolean)].forEach(([c]) => { if (!colors.includes(c)) colors.push(c); });
+  S = {
+    level: i, colors,
+    t: 0, time: L.time,
+    status: 'intro', // intro | play | won | lost
+    phase: 0, rot: 0, gid: 0, pours: [], flights: [],
+    cells: Array(CFG.BELT_CAP).fill(null),   // one slot per gem on the belt
+    carts: L.carts.map((c, ci) => ({
+      locked: (L.locked && L.locked.index === ci && !SAVE.owned[i]) ? L.locked.price : 0, inflight: 0, inflightCol: null,
+      segs: c.map(([col, amt]) => ({ col, amt })),
+      sealed: false, sealT: 0, outFlash: 0, flash: 0, shake: 0, acc: 0, sessN: 0, sessT: 0, sessCol: 'R', pouring: false, lev: 0,
+    })),
+    lanes: L.lanes.map(l => l ? { chunks: [{ col: l[0], amt: l[1] }], total: l[1], open: false, shake: 0 } : null),
+    undos: CFG.UNDOS, history: [],
+    combo: 0, comboT: 0, shakeT: 0,
+    particles: [], floats: [],
+    toast: null, buttons: [], stars: 0,
+  };
+  resize();
+  resetGates();
+}
+
+// The gate sits across the mouth of the cart, right under the hopper, which is where gems leave; the handle on the left side swings it open.
+function doorTarget() {
+  return lay.bodyY + 9;
+}
+
+const occupied = () => S.cells.reduce((a, g) => a + (g ? 1 : 0), 0);
+const cartTotal = c => sum(c.segs, s => s.amt);
+const topSeg = c => c.segs[c.segs.length - 1];
+const loopSeconds = () => CFG.BELT_CAP / CFG.SPEED;
+
+function toast(s) { S.toast = { s, t: 1.8 }; }
+function addFloat(x, y, text, color) { S.floats.push({ x, y, text, color, t: 0 }); }
+
+// Where the belt meets a cart gate (top run) or a reserve lane (bottom run), in belt units
+const topU = i => pxToUnits(lay.cx(i) - (lay.x0 + lay.r));
+function botU(x) {
+  const bottomStart = segs[4].start;
+  return pxToUnits(bottomStart + ((lay.x1 - lay.r) - x));
+}
+
+// The belt is a ring of CFG.BELT_CAP slots; slot k sits at belt position (k + S.phase) mod N. Each slot holds one gem or null.
+const cellAt = pu => Math.floor(mod(pu - S.phase, CFG.BELT_CAP));
+
+// each gate remembers the last slot it looked at, so it sees every slot that passes
+function resetGates() {
+  S.carts.forEach((c, i) => { c.prevCell = cellAt(topU(i)); });
+  S.pours.forEach(po => { po.prev = cellAt(po.pu); });
+}
+
+const pending = () => S.pours.reduce((a, po) => a + po.left, 0);
+const freeSlots = () => CFG.BELT_CAP - occupied() - pending();
+
+// A pour drops gems one at a time into the empty slots (belt-cart seats) that roll past its point on the belt.
+function startPour(src) {
+  S.pours.push(src);
+  src.prev = cellAt(src.pu);
+}
+
+// Put a gem into belt seat idx. If that seat is taken, the gems from idx onward each shift forward one seat
+// until the first empty seat absorbs the shift (so a new color never has to wait for a gap). Returns false only
+// when every seat on the belt is taken.
+function squeezeIn(idx, gem) {
+  const N = CFG.BELT_CAP;
+  let j = idx, steps = 0;
+  while (S.cells[j] !== null && steps < N) { j = (j + 1) % N; steps++; }
+  if (S.cells[j] !== null) return false;
+  for (let m = j; m !== idx; m = (m - 1 + N) % N) {
+    const from = (m - 1 + N) % N;
+    S.cells[m] = S.cells[from];
+    if (S.cells[m]) S.cells[m].shift -= 1;               // drawn one seat back, then eases forward
+  }
+  S.cells[idx] = gem;
+  return true;
+}
+
+function runPours() {
+  const N = CFG.BELT_CAP;
+  for (const po of S.pours.slice()) {
+    const cur = cellAt(po.pu);
+    let guard = 0;
+    while (po.prev !== cur && po.left > 0 && guard++ < 12) {
+      po.prev = mod(po.prev - 1, N);
+      const cell = { col: po.col, from: po.kind === 'cart' ? po.i : undefined, lock: S.t + loopSeconds() * 0.9, shift: 0, pop: 0, id: S.gid++, pending: true };
+      if (!squeezeIn(po.prev, cell)) break;   // the seat is reserved now; the gem shows up on it when its flight lands
+      po.left -= 1;
+      if (po.kind === 'cart') {
+        const c = S.carts[po.i], si = c.segs.length - 1, t = c.segs[si];
+        const p0 = cartGemSpot(po.i, si, t.amt - 1);               // the top gem of the top group
+        t.amt -= 1; if (t.amt <= 0) c.segs.pop();
+        c.flash = 0.4;
+        startFlight({ kind: 'out', col: po.col, cell, k: po.prev, p0, mouth: { x: lay.cx(po.i), y: lay.bodyY + 9 }, dur: 0.6 });
+      } else {
+        const ch = S.lanes[po.i].chunks[0];
+        const p0 = laneGemSpot(po.i, ch);
+        ch.amt -= 1;
+        startFlight({ kind: 'lane', col: po.col, cell, k: po.prev, p0, mouth: { x: lay.cx(po.i), y: lay.lanesTop - 2 }, dur: 0.55 });
+      }
+    }
+    if (po.left <= 0) {
+      S.pours.splice(S.pours.indexOf(po), 1);
+      if (po.kind === 'cart') S.carts[po.i].pouring = false;
+      else S.lanes[po.i].chunks = [];
+    } else {
+      po.prev = cur;
+    }
+  }
+}
+
+// ---------- Flights: gems visibly travel between pile, gate, hopper and belt ----------
+const lerp = (a, b, t) => a + (b - a) * t;
+const smooth = t => t * t * (3 - 2 * t);
+const lerpPt = (a, b, t) => ({ x: lerp(a.x, b.x, t), y: lerp(a.y, b.y, t), rot: lerp(a.rot || 0, b.rot || 0, t) });
+const topColor = c => c.inflight > 0 ? c.inflightCol : (topSeg(c) ? topSeg(c).col : null);
+
+function cartBox(i) { const x = lay.colX(i); return { ix: x + 5, iw: lay.cw - 10, ib: lay.bodyY + lay.bodyH - 5, ih: lay.bodyH - 10 }; }
+// where the n-th gem of segment si sits in a cart's pile right now
+function cartGemSpot(i, si, n) {
+  const c = S.carts[i], b = cartBox(i);
+  let yy = b.ib;
+  for (let k = 0; k < si; k++) yy -= c.segs[k].amt / CFG.CART_CAP * b.ih;
+  const hh = c.segs[si].amt / CFG.CART_CAP * b.ih;
+  return gemSpot(b.ix, yy - hh, b.iw, hh, c.segs[si].amt, CART_COLS, true, GEM_R, n);
+}
+function laneGemSpot(i, ch) {
+  const x = lay.colX(i), w = lay.cw, y = lay.lanesTop, hh = ch.amt * (lay.lanesH - 10) / 60;
+  return gemSpot(x + 5, y + 5, w - 10, hh, ch.amt, 4, false, (w - 10) / 4 * 0.64, 0);
+}
+function pileLanding(i) {
+  const c = S.carts[i], b = cartBox(i);
+  return { x: b.ix + b.iw / 2, y: b.ib - cartTotal(c) / CFG.CART_CAP * b.ih - GEM_R * 0.4, rot: 0 };
+}
+// where a gem sitting in belt seat k is drawn (the belt drawing and the flights share this)
+function beltGemPos(k, g) {
+  const up = P / CFG.BELT_CAP, lat = 4.5;
+  const sPos = (k + S.phase + g.shift + 0.5) * up;
+  const a = pointAt(sPos - 0.5), b = pointAt(sPos + 0.5), m = pointAt(sPos);
+  let nx = -(b.y - a.y), ny = b.x - a.x;
+  const l = Math.hypot(nx, ny) || 1; nx /= l; ny /= l;
+  const side = (k & 1) ? 1 : -1, j = (hash(g.id + 5) - 0.5) * 2.2;
+  return { x: m.x + nx * (lat * side + j * 0.6) + (b.x - a.x) * j * 0.5, y: m.y + ny * (lat * side + j * 0.6) + (b.y - a.y) * j * 0.5, rot: (hash(g.id + 77) - 0.5) * 1.5 };
+}
+function startFlight(f) { f.t = 0; S.flights.push(f); }
+function flightPos(f) {
+  const tt = Math.min(1, f.t / f.dur), split = 0.5;
+  if (f.kind === 'in') {                                   // belt -> down through the hopper -> onto the pile
+    return tt < split ? lerpPt(f.p0, f.mouth, smooth(tt / split)) : lerpPt(f.mouth, pileLanding(f.i), smooth((tt - split) / (1 - split)));
+  }
+  return tt < split ? lerpPt(f.p0, f.mouth, smooth(tt / split))   // pile -> up out of the gate -> onto its belt seat
+                    : lerpPt(f.mouth, beltGemPos(Math.max(0, S.cells.indexOf(f.cell)), f.cell), smooth((tt - split) / (1 - split)));
+}
+function landGem(f) {
+  const c = S.carts[f.i];
+  c.inflight = Math.max(0, c.inflight - 1);
+  if (c.sealed) return;
+  const t = topSeg(c);
+  if (t && t.col === f.col) t.amt += 1; else c.segs.push({ col: f.col, amt: 1 });
+  c.flash = 0.6; c.sessN += 1; c.sessT = 0.25; c.sessCol = f.col;
+  if (c.segs.length === 1 && c.segs[0].amt >= CFG.CART_CAP) sealCart(f.i);
+}
+function updateFlights(dt) {
+  for (const f of S.flights.slice()) {
+    f.t += dt;
+    if (f.t < f.dur) continue;
+    S.flights.splice(S.flights.indexOf(f), 1);
+    if (f.kind === 'in') landGem(f);
+    else if (f.cell) { f.cell.pending = false; f.cell.pop = 1; }
+  }
+}
+
+// ---------- Undo ----------
+// gems still falling into a cart count as already in it, so an undo never loses them
+function segsMerged(c) {
+  const out = c.segs.map(sg => ({ col: sg.col, amt: sg.amt }));
+  if (c.inflight > 0) { const t = out[out.length - 1]; if (t && t.col === c.inflightCol) t.amt += c.inflight; else out.push({ col: c.inflightCol, amt: c.inflight }); }
+  return out;
+}
+function snapshot() {
+  S.history.push(JSON.stringify({
+    cells: S.cells, phase: S.phase, pours: S.pours,
+    carts: S.carts.map(c => ({ segs: segsMerged(c), sealed: c.sealed })),
+    lanes: S.lanes.map(l => l && { chunks: l.chunks, open: l.open }),
+  }));
+  if (S.history.length > CFG.UNDOS) S.history.shift();
+}
+
+function undo() {
+  if (S.status !== 'play') return;
+  if (!S.history.length || S.undos <= 0) { toast('Nothing to undo'); return; }
+  const snap = JSON.parse(S.history.pop());
+  S.undos -= 1;
+  S.cells = snap.cells.map(g => g && Object.assign(g, { shift: 0, pop: 1, pending: false }));
+  S.phase = snap.phase; S.pours = snap.pours; S.flights = [];
+  S.carts.forEach(c => { c.pouring = false; c.inflight = 0; });
+  S.pours.forEach(po => { if (po.kind === 'cart') S.carts[po.i].pouring = true; });
+  snap.carts.forEach((c, i) => { S.carts[i].segs = c.segs; S.carts[i].sealed = c.sealed; S.carts[i].sealT = 0; });
+  snap.lanes.forEach((l, i) => { if (l) { S.lanes[i].chunks = l.chunks; S.lanes[i].open = l.open; } });
+  S.particles = []; S.combo = 0;
+  resetGates();
+  
+}
+
+// ---------- Rules ----------
+function cartGatePoint(i) { return { x: lay.cx(i), y: lay.gateY + 8 }; }
+
+function flyGems(from, to, col, n, dur = 0.4) {
+  for (let k = 0; k < n; k++) {
+    S.particles.push({
+      x0: from.x + (hash(k + 3) - 0.5) * 18, y0: from.y + (hash(k + 9) - 0.5) * 18,
+      x1: to.x + (hash(k + 17) - 0.5) * 16, y1: to.y + (hash(k + 29) - 0.5) * 16,
+      col, t: -k * 0.025, dur, rot: hash(k + 41) * 6,
+    });
+  }
+}
+function burst(x, y, col, n) {
+  for (let k = 0; k < n; k++) {
+    const a = hash(k + 5) * Math.PI * 2, d = 30 + hash(k + 13) * 70;
+    S.particles.push({ x0: x, y0: y, x1: x + Math.cos(a) * d, y1: y + Math.sin(a) * d - 20, col, t: 0, dur: 0.6, rot: hash(k + 21) * 6, burst: true });
+  }
+}
+
+function pressOut(i) {
+  if (S.status !== 'play') return;
+  const c = S.carts[i];
+  if (c.sealed || c.pouring || c.locked || !c.segs.length) return;
+  if (c.inflight > 0) { toast('Wait for the gems to land'); return; }
+  const top = topSeg(c);
+  if (freeSlots() < top.amt) {
+    toast('Belt is full'); c.shake = 0.4; buzz(30);
+    return;
+  }
+  snapshot();
+  S.poured = true;
+  c.pouring = true; c.acc = 0;
+  startPour({ kind: 'cart', i, col: top.col, left: top.amt, pu: topU(i) });
+  buzz(12);
+}
+
+function unlockLane(i) {
+  if (S.status !== 'play') return;
+  const L = S.lanes[i];
+  if (!L || L.open) return;
+  if (freeSlots() < L.total) {
+    toast('Not enough room on the belt'); L.shake = 0.4; buzz(30);
+    return;
+  }
+  snapshot();
+  S.laneUsed = true;
+  L.open = true;
+  startPour({ kind: 'lane', i, col: L.chunks[0].col, left: L.total, pu: botU(lay.cx(i)) });
+  buzz(15);
+}
+
+// Spend coins to unlock a locked spare cart. It stays unlocked for that level from then on.
+function buyCart(i) {
+  if (S.status !== 'play') return;
+  const c = S.carts[i];
+  if (!c.locked) return;
+  if (SAVE.coins < c.locked) { toast(`Need ${c.locked - SAVE.coins} more coins`); c.shake = 0.4; buzz(30); return; }
+  SAVE.coins -= c.locked;
+  SAVE.owned[S.level] = true;
+  saveSave();
+  c.locked = 0; c.flash = 1;
+  burst(lay.cx(i), lay.bodyY + lay.bodyH * 0.4, 'Y', 18);
+  toast('Spare cart unlocked!');
+  buzz(20);
+}
+
+// A gate catches its top color. An empty gate only catches a color that no other cart is already collecting.
+function accepts(c, col) {
+  const tc = topColor(c);
+  if (tc) return tc === col;
+  return !S.carts.some(o => o !== c && !o.sealed && !o.locked && topColor(o) === col && cartTotal(o) + o.inflight < CFG.CART_CAP);
+}
+
+// Gates catch gems one slot at a time as they pass underneath, so a cart fills over belt time, not instantly.
+function runCollectors() {
+  const N = CFG.BELT_CAP;
+  S.carts.forEach((c, i) => {
+    if (c.sealed || c.pouring || c.locked) return;
+    const cur = cellAt(topU(i));
+    let guard = 0;
+    while (c.prevCell !== cur && guard++ < 12) {
+      c.prevCell = mod(c.prevCell - 1, N);
+      const g = S.cells[c.prevCell];
+      if (!g || g.pending || g.pop < 0.5) continue;
+      if (g.from === i && S.t < g.lock) continue;
+      if (!accepts(c, g.col)) continue;
+      if (cartTotal(c) + c.inflight >= CFG.CART_CAP) break;
+      const k = c.prevCell, p0 = beltGemPos(k, g);
+      S.cells[k] = null;
+      c.inflight += 1; c.inflightCol = g.col;
+      startFlight({ kind: 'in', i, col: g.col, p0, mouth: { x: lay.cx(i), y: lay.bodyY + 9 }, dur: 0.5 });
+    }
+  });
+}
+
+function sealCart(i) {
+  const c = S.carts[i];
+  c.sealed = true; c.sealT = 1;
+  const col = c.segs[0].col;
+  const cx = lay.cx(i), cy = lay.bodyY + lay.bodyH / 2;
+  burst(cx, cy, col, 26);
+  addFloat(cx, cy, 'SEALED!', '#ffe08a');
+  S.shakeT = 0.35;
+  
+  buzz([20, 30, 40]);
+}
+
+function checkWin() {
+  const sealedColors = new Set(S.carts.filter(c => c.sealed).map(c => c.segs[0].col));
+  if (S.colors.every(col => sealedColors.has(col))) {
+    S.status = 'won';
+    S.undosUsed = CFG.UNDOS - S.undos;
+    S.stars = 3 - Math.min(2, S.undosUsed);              // stars reward clean play, never speed
+    S.reward = levelReward(S.level, S.stars, !SAVE.stars[S.level]);
+    SAVE.coins += S.reward;
+    SAVE.stars[S.level] = Math.max(SAVE.stars[S.level] || 0, S.stars);
+    SAVE.unlocked = Math.max(SAVE.unlocked, S.level + 2);
+    saveSave();
+    
+  }
+}
+
+function update(dt) {
+  S.t += dt;
+  if (S.toast) { S.toast.t -= dt; if (S.toast.t <= 0) S.toast = null; }
+  S.comboT = Math.max(0, S.comboT - dt); if (S.comboT === 0) S.combo = 0;
+  S.shakeT = Math.max(0, S.shakeT - dt);
+  for (const c of S.carts) {
+    c.flash = Math.max(0, c.flash - dt * 2.5);
+    c.outFlash = Math.max(0, c.outFlash - dt);
+    c.lev += ((c.pouring ? 1 : 0) - c.lev) * Math.min(1, dt * 10);
+    const dyT = doorTarget();
+    c.dy = dyT;
+    c.shake = Math.max(0, c.shake - dt);
+    c.sealT = Math.max(0, c.sealT - dt * 0.8);
+    if (c.sessT > 0) {
+      c.sessT -= dt;
+      if (c.sessT <= 0 && c.sessN > 0) {
+        S.combo = S.comboT > 0 ? S.combo + 1 : 1; S.comboT = 2.5;
+        const i = S.carts.indexOf(c);
+        addFloat(lay.cx(i), lay.gateY + lay.gateH + 16, `+${c.sessN}`, COLORS[c.sessCol].c);
+        
+        buzz(8);
+        c.sessN = 0;
+      }
+    }
+  }
+  for (const l of S.lanes) if (l) l.shake = Math.max(0, l.shake - dt);
+  for (const p of S.particles) p.t += dt;
+  updateFlights(dt);
+  S.particles = S.particles.filter(p => p.t < p.dur);
+  for (const f of S.floats) f.t += dt;
+  S.floats = S.floats.filter(f => f.t < 1);
+
+  if (S.status === 'play' || S.status === 'lost' || S.status === 'intro' || S.status === 'select') {
+    S.phase = mod(S.phase + CFG.SPEED * dt, CFG.BELT_CAP);
+  }
+  const k = 1 - Math.exp(-dt * 9), dk = Math.exp(-dt * 9);
+  for (const g of S.cells) {
+    if (!g) continue;
+    g.shift *= dk;
+    if (Math.abs(g.shift) < 0.02) g.shift = 0;
+    g.pop += (1 - g.pop) * k;
+    if (g.pop > 0.995) g.pop = 1;
+  }
+  if (S.status === 'play') {
+    S.time -= dt;
+    runPours();
+    runCollectors();
+    checkWin();
+    if (S.status === 'play' && S.time <= 0) {
+      S.time = 0; S.status = 'lost';
+      
+    }
+  }
+}
+
+// ---------- Drawing helpers ----------
+function font(size, weight = 700) { ctx.font = `${weight} ${size}px ui-rounded, "SF Pro Rounded", system-ui, -apple-system, sans-serif`; }
+function txt(s, x, y, size, color, align = 'center', weight = 700, shadow = false) {
+  font(size, weight);
+  ctx.textAlign = align; ctx.textBaseline = 'middle';
+  if (shadow) { ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.7)'; ctx.lineJoin = 'round'; ctx.strokeText(s, x, y); }
+  ctx.fillStyle = color; ctx.fillText(s, x, y);
+}
+function rr(x, y, w, h, r) { ctx.beginPath(); ctx.roundRect(x, y, w, h, r); }
+
+// Candy-style button: bottom lip, gradient face, glossy top highlight.
+function glossBtn(x, y, w, h, r, base) {
+  ctx.save();
+  ctx.shadowColor = 'rgba(25,10,0,0.5)'; ctx.shadowBlur = 8; ctx.shadowOffsetY = 3;
+  rr(x, y + 2, w, h - 2, r); ctx.fillStyle = mixHex(base, '#000000', 0.45); ctx.fill();
+  ctx.restore();
+  const g = ctx.createLinearGradient(0, y, 0, y + h - 3);
+  g.addColorStop(0, mixHex(base, '#ffffff', 0.4)); g.addColorStop(1, base);
+  rr(x, y, w, h - 3, r); ctx.fillStyle = g; ctx.fill();
+  rr(x + 3, y + 2, w - 6, (h - 3) * 0.42, r - 2); ctx.fillStyle = 'rgba(255,255,255,0.3)'; ctx.fill();
+  rr(x, y, w, h - 3, r); ctx.lineWidth = 1.5; ctx.strokeStyle = 'rgba(255,255,255,0.45)'; ctx.stroke();
+}
+
+// Wooden sign panel for the intro and result screens.
+function panel(x, y, w, h) {
+  ctx.save();
+  ctx.shadowColor = 'rgba(0,0,0,0.6)'; ctx.shadowBlur = 24; ctx.shadowOffsetY = 8;
+  rr(x, y, w, h, 20); ctx.fillStyle = '#5a3a20'; ctx.fill();
+  ctx.restore();
+  const g = ctx.createLinearGradient(0, y, 0, y + h);
+  g.addColorStop(0, '#7a5230'); g.addColorStop(1, '#4a2f1a');
+  rr(x + 5, y + 5, w - 10, h - 10, 16); ctx.fillStyle = g; ctx.fill();
+  ctx.strokeStyle = 'rgba(0,0,0,0.22)'; ctx.lineWidth = 1;
+  for (let k = 1; k < 9; k++) { ctx.beginPath(); ctx.moveTo(x + 8, y + (h / 9) * k); ctx.lineTo(x + w - 8, y + (h / 9) * k); ctx.stroke(); }
+  rr(x, y, w, h, 20); ctx.lineWidth = 4; ctx.strokeStyle = '#c99a5a'; ctx.stroke();
+  [[x + 14, y + 14], [x + w - 14, y + 14], [x + 14, y + h - 14], [x + w - 14, y + h - 14]].forEach(([nx, ny]) => nail(nx, ny));
+}
+
+function gemShape(shape, x, y, r) {
+  ctx.beginPath();
+  if (shape === 'dia') {
+    ctx.moveTo(x, y - r); ctx.lineTo(x + r * 0.8, y); ctx.lineTo(x, y + r); ctx.lineTo(x - r * 0.8, y);
+  } else if (shape === 'hex') {
+    for (let k = 0; k < 6; k++) { const a = Math.PI / 6 + k * Math.PI / 3; ctx.lineTo(x + Math.cos(a) * r, y + Math.sin(a) * r); }
+  } else if (shape === 'sq') {
+    ctx.roundRect(x - r * 0.8, y - r * 0.8, r * 1.6, r * 1.6, r * 0.3);
+  } else {
+    ctx.moveTo(x, y - r); ctx.lineTo(x + r, y + r * 0.8); ctx.lineTo(x - r, y + r * 0.8);
+  }
+  ctx.closePath();
+}
+
+const gemSprites = new Map();
+const hexRgb = h => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
+function mixHex(a, b, t) {
+  const A = hexRgb(a), B = hexRgb(b);
+  return `rgb(${Math.round(A[0] + (B[0] - A[0]) * t)},${Math.round(A[1] + (B[1] - A[1]) * t)},${Math.round(A[2] + (B[2] - A[2]) * t)})`;
+}
+function gemPoints(shape, r) {
+  if (shape === 'dia') return [[0, -r], [r * 0.78, 0], [0, r], [-r * 0.78, 0]];
+  if (shape === 'hex') return [0, 1, 2, 3, 4, 5].map(k => { const a = Math.PI / 6 + k * Math.PI / 3; return [Math.cos(a) * r, Math.sin(a) * r]; });
+  if (shape === 'pent') return [0, 1, 2, 3, 4].map(k => { const a = -Math.PI / 2 + k * Math.PI * 2 / 5; return [Math.cos(a) * r, Math.sin(a) * r]; });
+  if (shape === 'sq') { const a = r * 0.95, b = r * 0.5; return [[-b, -a], [b, -a], [a, -b], [a, b], [b, a], [-b, a], [-a, b], [-a, -b]]; }
+  return [[0, -r], [r * 0.98, r * 0.82], [-r * 0.98, r * 0.82]];
+}
+// A faceted stone: soft colored glow, facets lit from the top-left, a thin outline and a sharp highlight.
+function gemSprite(col, r) {
+  const key = col + ':' + Math.round(r * 2) + ':' + Q.toFixed(2);
+  let sp = gemSprites.get(key);
+  if (sp) return sp;
+  const rad = Math.round(r * 2) / 2, pad = Math.ceil(rad * 0.55) + 2, size = Math.ceil((rad + pad) * 2);
+  const sc = Math.max(2, Q * 1.5);
+  const cv2 = document.createElement('canvas');
+  cv2.width = cv2.height = Math.ceil(size * sc);
+  const g = cv2.getContext('2d');
+  g.scale(sc, sc); g.translate(size / 2, size / 2);
+  const C = COLORS[col];
+  const glow = g.createRadialGradient(0, 0, rad * 0.4, 0, 0, rad + pad);
+  glow.addColorStop(0, `rgba(${C.glow},0.5)`); glow.addColorStop(1, `rgba(${C.glow},0)`);
+  g.fillStyle = glow; g.beginPath(); g.arc(0, 0, rad + pad, 0, 7); g.fill();
+  const P = gemPoints(C.shape, rad);
+  const lx = -0.62, ly = -0.78;
+  // facets
+  for (let i = 0; i < P.length; i++) {
+    const a = P[i], b = P[(i + 1) % P.length];
+    const mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2, ml = Math.hypot(mx, my) || 1;
+    const lit = (mx / ml * lx + my / ml * ly + 1) / 2;
+    g.beginPath(); g.moveTo(0, 0); g.lineTo(a[0], a[1]); g.lineTo(b[0], b[1]); g.closePath();
+    g.fillStyle = lit > 0.5 ? mixHex(C.c, C.l, (lit - 0.5) * 2) : mixHex(C.d, C.c, lit * 2);
+    g.fill();
+  }
+  // table (inner top facet)
+  g.beginPath(); P.forEach((q, i) => { if (i) g.lineTo(q[0] * 0.52, q[1] * 0.52); else g.moveTo(q[0] * 0.52, q[1] * 0.52); }); g.closePath();
+  const tg = g.createLinearGradient(-rad * 0.5, -rad * 0.5, rad * 0.5, rad * 0.5);
+  tg.addColorStop(0, C.l); tg.addColorStop(1, C.c);
+  g.globalAlpha = 0.85; g.fillStyle = tg; g.fill(); g.globalAlpha = 1;
+  g.lineWidth = 0.7; g.strokeStyle = 'rgba(255,255,255,0.55)'; g.stroke();
+  // outline
+  g.beginPath(); P.forEach((q, i) => { if (i) g.lineTo(q[0], q[1]); else g.moveTo(q[0], q[1]); }); g.closePath();
+  g.lineWidth = 1; g.strokeStyle = 'rgba(40,16,10,0.55)'; g.lineJoin = 'round'; g.stroke();
+  // sharp highlight + sparkle dot
+  g.fillStyle = 'rgba(255,255,255,0.85)';
+  g.beginPath(); g.moveTo(-rad * 0.52, -rad * 0.42); g.lineTo(-rad * 0.12, -rad * 0.62); g.lineTo(-rad * 0.22, -rad * 0.34); g.closePath(); g.fill();
+  g.beginPath(); g.arc(rad * 0.28, rad * 0.3, rad * 0.09, 0, 7); g.fillStyle = 'rgba(255,255,255,0.6)'; g.fill();
+  sp = { cv: cv2, size };
+  gemSprites.set(key, sp);
+  return sp;
+}
+
+function drawGem(x, y, r, col, rot = 0) {
+  const sp = gemSprite(col, r);
+  ctx.save();
+  ctx.translate(x, y); ctx.rotate(rot);
+  ctx.drawImage(sp.cv, -sp.size / 2, -sp.size / 2, sp.size, sp.size);
+  ctx.restore();
+}
+
+// Exactly `count` gems as a loose pile: bigger than their grid cell, jittered and rotated, so they overlap.
+function gemSpot(x, y, w, h, count, cols, up, r, n) {
+  const rows = Math.ceil(count / cols), step = w / cols, rowH = h / rows;
+  const over = Math.max(0, r - rowH / 2);          // keep the pile inside its box: shift it in by what a gem overhangs
+  const k = Math.floor(n / cols), c2 = n - k * cols, inRow = Math.min(cols, count - k * cols);
+  const x0 = x + (cols - inRow) * step / 2;
+  const yy = up ? y + h - (k + 0.5) * rowH - over : y + (k + 0.5) * rowH + over;
+  const jx = (hash(n + 1) - 0.5) * step * 0.5;
+  const jy = (hash(n + 101) - 0.5) * rowH * 0.9;
+  return { x: Math.max(x + r * 0.9, Math.min(x + w - r * 0.9, x0 + (c2 + 0.5) * step + jx)), y: yy + jy, rot: (hash(n + 211) - 0.5) * 1.5 };
+}
+function fillGems(x, y, w, h, col, count, cols, up, r) {
+  for (let n = 0; n < count; n++) { const sp = gemSpot(x, y, w, h, count, cols, up, r, n); drawGem(sp.x, sp.y, r, col, sp.rot); }
+}
+
+let bgCanvas = null;
+function makeBackground() {
+  const c = document.createElement('canvas');
+  c.width = Math.round(VW * Q); c.height = Math.round(VH * Q);
+  const g = c.getContext('2d');
+  g.scale(Q, Q);
+  const grad = g.createLinearGradient(0, 0, 0, VH);
+  grad.addColorStop(0, '#5d4838'); grad.addColorStop(0.5, '#47362a'); grad.addColorStop(1, '#2f241b');
+  g.fillStyle = grad; g.fillRect(0, 0, VW, VH);
+  let seed = 11;
+  const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  // rock blobs
+  const area = VW * VH / (390 * 844);
+  for (let k = 0; k < Math.round(170 * area); k++) {
+    const x = rnd() * VW, y = rnd() * VH, r = 14 + rnd() * 42;
+    g.beginPath();
+    for (let a = 0; a < 7; a++) {
+      const ang = a / 7 * Math.PI * 2, rad = r * (0.65 + rnd() * 0.5);
+      const px = x + Math.cos(ang) * rad, py = y + Math.sin(ang) * rad * 0.7;
+      if (a) g.lineTo(px, py); else g.moveTo(px, py);
+    }
+    g.closePath();
+    g.fillStyle = rnd() < 0.5 ? 'rgba(255,225,180,0.07)' : 'rgba(30,15,5,0.14)'; g.fill();
+  }
+  // strata
+  g.strokeStyle = 'rgba(0,0,0,0.2)'; g.lineWidth = 2;
+  for (let y = 36; y < VH; y += 54) {
+    g.beginPath();
+    for (let x = 0; x <= VW; x += 18) { const yy = y + Math.sin(x * 0.03 + y) * 6; if (x) g.lineTo(x, yy); else g.moveTo(x, yy); }
+    g.stroke();
+  }
+  // glittering ore specks in the rock
+  const keys = Object.keys(COLORS);
+  for (let k = 0; k < Math.round(30 * area); k++) {
+    const col = COLORS[keys[k % keys.length]], x = rnd() * VW, y = rnd() * VH;
+    g.globalAlpha = 0.12; g.fillStyle = col.c; g.beginPath(); g.arc(x, y, 8, 0, 7); g.fill();
+    g.globalAlpha = 0.65; g.beginPath(); g.arc(x, y, 1.4 + rnd() * 2.2, 0, 7); g.fill();
+  }
+  g.globalAlpha = 1;
+  const v = g.createRadialGradient(VW / 2, VH / 2, VH * 0.25, VW / 2, VH / 2, VH * 0.78);
+  v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(20,10,0,0.38)');
+  g.fillStyle = v; g.fillRect(0, 0, VW, VH);
+  bgCanvas = c;
+}
+
+function plank(x, y, w, h, seedN) {
+  const g = ctx.createLinearGradient(0, y, 0, y + h);
+  g.addColorStop(0, '#6a4526'); g.addColorStop(1, '#3d2714');
+  ctx.fillStyle = g; ctx.fillRect(x, y, w, h);
+  ctx.strokeStyle = 'rgba(0,0,0,0.28)'; ctx.lineWidth = 1;
+  for (let k = 0; k < 7; k++) {
+    const gy = y + 3 + hash(seedN + k) * (h - 6), gx = x + hash(seedN + k + 30) * w * 0.8;
+    ctx.beginPath(); ctx.moveTo(gx, gy); ctx.lineTo(gx + 20 + hash(seedN + k + 60) * 50, gy + (hash(seedN + k + 90) - 0.5) * 2); ctx.stroke();
+  }
+  ctx.fillStyle = 'rgba(255,220,170,0.18)'; ctx.fillRect(x, y, w, 1.5);
+  ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(x, y + h - 2, w, 2);
+}
+
+function nail(x, y) {
+  ctx.fillStyle = '#9aa0a6'; ctx.beginPath(); ctx.arc(x, y, 2.2, 0, 7); ctx.fill();
+  ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.beginPath(); ctx.arc(x + 0.6, y + 0.6, 1.1, 0, 7); ctx.fill();
+}
+
+function drawBackground() {
+  // warm lantern light that flickers
+  const f = 0.10 + 0.025 * Math.sin(S.t * 7) + 0.015 * Math.sin(S.t * 13 + 1);
+  for (const [lx, ly] of [[VX0 + 4, LH * 0.5], [VX0 + VW - 4, LH * 0.5], [LW / 2, LH - 6]]) {
+    const g = ctx.createRadialGradient(lx, ly, 4, lx, ly, 150);
+    g.addColorStop(0, `rgba(255,180,80,${f * 1.7})`); g.addColorStop(1, 'rgba(255,170,70,0)');
+    ctx.fillStyle = g; ctx.fillRect(lx - 150, ly - 150, 300, 300);
+  }
+  // timber beam under the lanes
+  plank(VX0, LH - 12, VW, 12, 5);
+}
+
+// ---------- HUD ----------
+function drawHud() {
+  plank(VX0, 0, VW, lay.hudH - 6, 21);
+  ctx.fillStyle = '#2a2d30'; ctx.fillRect(VX0, lay.hudH - 10, VW, 4);
+  ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(VX0, lay.hudH - 6, VW, 5);
+  [[VX0 + 6, 6], [VX0 + VW - 6, 6], [VX0 + 6, lay.hudH - 16], [VX0 + VW - 6, lay.hudH - 16]].forEach(([nx, ny]) => nail(nx, ny));
+  const used = occupied();
+  const t = Math.ceil(S.time), m = Math.floor(t / 60), s = String(t % 60).padStart(2, '0');
+  const low = S.time < 15 && S.status === 'play';
+  txt(`${m}:${s}`, 14, 26, 24, low && Math.floor(S.t * 4) % 2 ? '#ff6b6b' : '#ffe2a8', 'left', 800);
+
+  // belt gauge
+  const gx = 112, gw = Math.max(90, LW - 112 - 112), gy = 17, gh = 18;
+  const frac = used / CFG.BELT_CAP;
+  const hot = frac > 0.85;
+  rr(gx, gy, gw, gh, 9); ctx.fillStyle = '#2a1a0c'; ctx.fill();
+  if (frac > 0) {
+    const fw = Math.max(gh, gw * frac);
+    rr(gx, gy, fw, gh, 9);
+    const fg = ctx.createLinearGradient(0, gy, 0, gy + gh);
+    if (hot) { fg.addColorStop(0, '#ff9a6a'); fg.addColorStop(1, '#d9381f'); } else { fg.addColorStop(0, '#ffd96a'); fg.addColorStop(1, '#e0891f'); }
+    ctx.fillStyle = fg; ctx.fill();
+    rr(gx + 3, gy + 2, Math.max(0, fw - 6), gh * 0.34, 4); ctx.fillStyle = 'rgba(255,255,255,0.38)'; ctx.fill();
+  }
+  rr(gx, gy, gw, gh, 9); ctx.lineWidth = 2; ctx.strokeStyle = hot ? '#ffb09a' : '#e0b070'; ctx.stroke();
+  txt(`${used} / ${CFG.BELT_CAP}`, gx + gw / 2, gy + gh / 2 + 1, 12, '#fff3da', 'center', 800, true);
+  txt('BELT', gx - 8, gy + gh / 2 + 1, 10, '#a98a62', 'right', 800);
+
+  // undo + restart
+  const bs = 40, by = 8;
+  const ux = LW - 14 - bs * 2 - 8, rx = LW - 14 - bs;
+  const canUndo = S.undos > 0 && S.history.length > 0;
+  glossBtn(ux, by, bs, bs, 12, canUndo ? '#f0a62b' : '#8a7a60');
+  txt('↶', ux + bs / 2, by + bs / 2 - 1, 24, canUndo ? '#3a2208' : '#5a4a34');
+  ctx.beginPath(); ctx.arc(ux + bs - 4, by + 6, 9, 0, Math.PI * 2); ctx.fillStyle = '#e0452f'; ctx.fill(); ctx.lineWidth = 1.5; ctx.strokeStyle = '#fff'; ctx.stroke();
+  txt(String(S.undos), ux + bs - 4, by + 6.5, 11, '#ffffff', 'center', 800);
+  S.buttons.push({ x: ux - 4, y: by - 4, w: bs + 8, h: bs + 8, fn: undo });
+  glossBtn(rx, by, bs, bs, 12, '#f0a62b');
+  txt('↻', rx + bs / 2, by + bs / 2 - 1, 24, '#3a2208');
+  S.buttons.push({ x: rx - 4, y: by - 4, w: bs + 8, h: bs + 8, fn: () => loadLevel(S.level) });
+
+  // goal row: level name + one pip per color that still has to be sealed
+  const nameStr = `${S.level + 1}. ${LEVELS[S.level].name}`;
+  txt(nameStr, 14, 56, 13, '#d9bf94', 'left', 700);
+  font(13, 700); drawCoinPill(14 + ctx.measureText(nameStr).width + 10, 56, SAVE.coins);
+  const sealedColors = new Set(S.carts.filter(c => c.sealed).map(c => c.segs[0].col));
+  const pw = 26, startX = LW - 14 - S.colors.length * pw;
+  S.colors.forEach((col, k) => {
+    const px = startX + k * pw + pw / 2, done = sealedColors.has(col);
+    ctx.save();
+    if (!done) ctx.globalAlpha = 0.32;
+    drawGem(px, 56, 9, col);
+    ctx.restore();
+    if (done) txt('✓', px + 8, 63, 11, '#ffe08a', 'center', 800, true);
+  });
+}
+
+// ---------- Belt ----------
+function strokeAlong(s0, len, step = 3) {
+  ctx.beginPath();
+  for (let d = 0; d <= len; d += step) { const p = pointAt(s0 + Math.min(d, len)); if (d === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y); }
+  const e = pointAt(s0 + len); ctx.lineTo(e.x, e.y);
+  ctx.stroke();
+}
+
+function drawTrainCart(s0, len) {
+  ctx.lineCap = 'butt'; ctx.lineJoin = 'round'; ctx.setLineDash([]);
+  ctx.strokeStyle = '#1b1d20'; ctx.lineWidth = 32; strokeAlong(s0, len);       // shadow
+  ctx.strokeStyle = '#c3c9ce'; ctx.lineWidth = 30; strokeAlong(s0, len);       // iron rim
+  ctx.strokeStyle = '#9a6a3c'; ctx.lineWidth = 26; strokeAlong(s0, len);       // wooden wall
+  ctx.setLineDash([2.5, Math.max(4, len / 3 - 2.5)]); ctx.lineDashOffset = -len / 6;
+  ctx.strokeStyle = '#555a60'; ctx.lineWidth = 28; strokeAlong(s0, len);       // iron bands across the wall
+  ctx.setLineDash([]);
+  ctx.strokeStyle = 'rgba(20,12,6,0.22)'; ctx.lineWidth = 20; strokeAlong(s0, len);       // inside of the cart (see-through)
+  ctx.strokeStyle = 'rgba(255,255,255,0.18)'; ctx.lineWidth = 1.5;
+  for (const d of [1.5, len - 1.5]) {                                             // end plates + rivets
+    const a = pointAt(s0 + d - 0.5), b = pointAt(s0 + d + 0.5), m = pointAt(s0 + d);
+    let nx = -(b.y - a.y), ny = b.x - a.x; const l = Math.hypot(nx, ny) || 1; nx /= l; ny /= l;
+    ctx.fillStyle = '#d0d5da';
+    for (const sd of [-1, 1]) { ctx.beginPath(); ctx.arc(m.x + nx * 12 * sd, m.y + ny * 12 * sd, 1.6, 0, 7); ctx.fill(); }
+  }
+}
+
+function drawBelt() {
+  const N = CFG.BELT_CAP, up = P / N;
+  ctx.setLineDash([]); ctx.lineCap = 'butt'; ctx.lineJoin = 'round';
+  // rail track: ballast, wooden ties, two steel rails
+  ctx.strokeStyle = '#0b0806'; ctx.lineWidth = BW + 12; ctx.stroke(beltPath);
+  ctx.setLineDash([5, 9]); ctx.strokeStyle = '#6f4c2a'; ctx.lineWidth = BW + 8; ctx.stroke(beltPath);
+  ctx.setLineDash([]);
+  ctx.strokeStyle = '#aab1b7'; ctx.lineWidth = BW + 2; ctx.stroke(beltPath);
+  ctx.strokeStyle = '#17110c'; ctx.lineWidth = BW - 3; ctx.stroke(beltPath);
+  ctx.setLineDash([5, 9]); ctx.strokeStyle = '#4e371f'; ctx.lineWidth = BW - 4; ctx.stroke(beltPath);
+  ctx.setLineDash([]);
+
+  // the train: mine carts fixed to the belt, so you can see it move
+  const count = Math.max(1, Math.round(N / 10)), K = N / count;
+  for (let j = 0; j < count; j++) {
+    const u0 = mod(j * K + S.phase, N);
+    drawTrainCart(u0 * up, (K - 0.8) * up);
+  }
+
+  // every gem is its own piece (a gem still flying in or out is drawn by its flight, not here)
+  const beltR = Math.min(GEM_R, 8.5);
+  for (let k = 0; k < N; k++) {
+    const g = S.cells[k];
+    if (!g || g.pending) continue;
+    const pp = beltGemPos(k, g);
+    drawGem(pp.x, pp.y, beltR * (0.55 + 0.45 * g.pop), g.col, pp.rot);
+  }
+
+  // amount labels on longer runs of the same color
+  for (let k = 0; k < N;) {
+    const g = S.cells[k];
+    if (!g) { k++; continue; }
+    let e = k;
+    while (e + 1 < N && S.cells[e + 1] && S.cells[e + 1].col === g.col) e++;
+    if (e - k + 1 >= 8) {
+      const mid = pointAt((((k + e) / 2) + S.phase + S.cells[k].shift + 0.5) * up);
+      const n = e - k + 1;
+      font(10); const w = ctx.measureText(String(n)).width + 8;
+      rr(mid.x - w / 2, mid.y - 7, w, 14, 7); ctx.fillStyle = 'rgba(10,6,3,0.82)'; ctx.fill();
+      txt(String(n), mid.x, mid.y + 0.5, 10, '#fff3da', 'center', 800);
+    }
+    k = e + 1;
+  }
+}
+
+// is a gem this gate would catch about to pass underneath it?
+function incoming(i) {
+  const c = S.carts[i];
+  if (c.sealed || c.pouring || c.locked) return false;
+  const pu = topU(i), N = CFG.BELT_CAP;
+  for (let k = 0; k < N; k++) {
+    const g = S.cells[k];
+    if (!g || g.pending || (g.from === i && S.t < g.lock)) continue;
+    if (mod(pu - (k + S.phase), N) <= 22 && accepts(c, g.col)) return true;
+  }
+  return false;
+}
+
+// ---------- Coins and locked spare carts ----------
+function drawCoin(x, y, r) {
+  const g = ctx.createRadialGradient(x - r * 0.3, y - r * 0.3, r * 0.2, x, y, r);
+  g.addColorStop(0, '#fff3a8'); g.addColorStop(1, '#e0951a');
+  ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fillStyle = g; ctx.fill();
+  ctx.lineWidth = Math.max(1, r * 0.14); ctx.strokeStyle = '#9a5a08'; ctx.stroke();
+  ctx.beginPath(); ctx.arc(x, y, r * 0.62, 0, Math.PI * 2); ctx.lineWidth = Math.max(1, r * 0.1); ctx.strokeStyle = 'rgba(154,90,8,0.55)'; ctx.stroke();
+  txt('G', x, y + r * 0.06, Math.round(r * 1.05), 'rgba(140,80,6,0.9)', 'center', 800);
+}
+function drawCoinPill(x, cy, amount) {
+  const label = String(amount); font(13, 800);
+  const tw = ctx.measureText(label).width, w = 32 + tw, h = 22;
+  rr(x, cy - h / 2, w, h, 11); ctx.fillStyle = 'rgba(20,10,0,0.55)'; ctx.fill();
+  ctx.lineWidth = 1.5; ctx.strokeStyle = 'rgba(255,214,120,0.55)'; ctx.stroke();
+  drawCoin(x + 12, cy, 8.5);
+  txt(label, x + 25, cy + 0.5, 13, '#ffe08a', 'left', 800);
+  return w;
+}
+function drawLockedCart(i, x, w) {
+  const c = S.carts[i], by = lay.bodyY, bh = lay.bodyH, price = c.locked, can = SAVE.coins >= price;
+  const sh = c.shake > 0 ? Math.sin(c.shake * 60) * 3 : 0;
+  ctx.save(); ctx.translate(sh, 0);
+  ctx.globalAlpha = 0.6;
+  rr(x, by, w, bh, 9); ctx.fillStyle = 'rgba(255,245,225,0.05)'; ctx.fill();
+  rr(x, by, w, bh, 9); ctx.lineWidth = 5; ctx.strokeStyle = '#8a6a46'; ctx.stroke();
+  ctx.globalAlpha = 1;
+  const cy = by + bh * 0.36;
+  ctx.beginPath(); ctx.arc(x + w / 2, cy, 24, 0, Math.PI * 2); ctx.fillStyle = 'rgba(18,12,8,0.9)'; ctx.fill();
+  ctx.lineWidth = 2; ctx.strokeStyle = '#ffd56b'; ctx.stroke();
+  ctx.save(); ctx.translate(x + w / 2, cy); ctx.scale(1.0, 1.0); drawLock(0, -1, false, '#ffd56b'); ctx.restore();
+  txt('SPARE', x + w / 2, cy + 40, 11, '#f0dcb0', 'center', 800, true);
+  txt('CART', x + w / 2, cy + 54, 11, '#f0dcb0', 'center', 800, true);
+  // buy button where the OPEN button normally is
+  glossBtn(x, lay.btnY, w, lay.btnH, 12, can ? '#f0a62b' : '#8a7a60');
+  drawCoin(x + w / 2 - 11, lay.btnY + 14, 8);
+  txt(String(price), x + w / 2 + 14, lay.btnY + 14.5, 13, can ? '#3a2208' : '#4a3a28', 'center', 800);
+  txt('UNLOCK', x + w / 2, lay.btnY + lay.btnH - 17, 10, can ? '#3a2208' : '#4a3a28', 'center', 800);
+  ctx.restore();
+  S.buttons.push({ x: x - lay.gap / 2, y: lay.gateY, w: w + lay.gap, h: lay.btnY + lay.btnH - lay.gateY, fn: () => buyCart(i) });
+}
+
+// ---------- Carts ----------
+function wheel(cx, cy, r) {
+  ctx.fillStyle = '#26292c'; ctx.beginPath(); ctx.arc(cx, cy, r, 0, 7); ctx.fill();
+  ctx.lineWidth = 2; ctx.strokeStyle = '#9097a0'; ctx.stroke();
+  ctx.strokeStyle = '#6b7178'; ctx.lineWidth = 1.5;
+  for (let a = 0; a < 3; a++) { const an = a * Math.PI / 3 + 0.4; ctx.beginPath(); ctx.moveTo(cx - Math.cos(an) * r * 0.8, cy - Math.sin(an) * r * 0.8); ctx.lineTo(cx + Math.cos(an) * r * 0.8, cy + Math.sin(an) * r * 0.8); ctx.stroke(); }
+  ctx.fillStyle = '#c0c6cc'; ctx.beginPath(); ctx.arc(cx, cy, 1.8, 0, 7); ctx.fill();
+}
+
+function drawCart(i) {
+  const c = S.carts[i];
+  const x = lay.colX(i), w = lay.cw;
+  if (c.locked) { drawLockedCart(i, x, w); return; }
+  const sh = c.shake > 0 ? Math.sin(c.shake * 60) * 3 : 0;
+  ctx.save(); ctx.translate(sh, 0);
+
+  const by = lay.bodyY, bh = lay.bodyH;
+  const sealed = c.sealed;
+  const iron = sealed ? '#d9b04a' : '#6a6f75', ironHi = sealed ? '#fff0a8' : '#aab1b7';
+
+  // clear glass: nothing is painted behind the gems, the cave wall shows through
+  rr(x, by, w, bh, 9); ctx.fillStyle = 'rgba(255,245,225,0.05)'; ctx.fill();
+
+  // gems inside the box
+  const ix = x + 5, iw = w - 10, ib = by + bh - 5, ih = bh - 10;
+  let yy = ib;
+  const spans = [];
+  for (const sg of c.segs) {
+    const hh = sg.amt / CFG.CART_CAP * ih;
+    fillGems(ix, yy - hh, iw, hh, sg.col, sg.amt, CART_COLS, true, GEM_R);   // whole gems, nothing clips them
+    spans.push([sg, yy, hh]);
+    yy -= hh;
+  }
+  for (const [sg, y0, hh] of spans) {                                          // amount labels sit on top of every gem
+    if (hh >= 14) {
+      rr(ix + iw / 2 - 17, y0 - hh / 2 - 8, 34, 16, 8); ctx.fillStyle = 'rgba(10,6,3,0.72)'; ctx.fill();
+      txt(String(sg.amt), ix + iw / 2, y0 - hh / 2 + 0.5, 12, '#fff', 'center', 800);
+    }
+  }
+
+  // wooden frame with iron bands and rivets
+  ctx.save();
+  if (c.flash > 0 || c.sealT > 0) { ctx.shadowColor = `rgba(255,214,120,${Math.max(c.flash, c.sealT)})`; ctx.shadowBlur = 22 * Math.max(c.flash, c.sealT); }
+  rr(x, by, w, bh, 9); ctx.lineWidth = 5; ctx.strokeStyle = sealed ? '#d9a63e' : '#b87a3e'; ctx.stroke();
+  ctx.restore();
+  rr(x + 2.5, by + 2.5, w - 5, bh - 5, 7); ctx.lineWidth = 1.5; ctx.strokeStyle = 'rgba(255,220,170,0.25)'; ctx.stroke();
+  for (const by2 of [by + 8, by + bh * 0.5, by + bh - 14]) {
+    ctx.fillStyle = iron; ctx.fillRect(x - 2, by2, w + 4, 7);
+    ctx.fillStyle = ironHi; ctx.fillRect(x - 2, by2, w + 4, 1.5);
+    ctx.fillStyle = '#c4cad0';
+    for (const rx of [x + 3, x + w - 3]) { ctx.beginPath(); ctx.arc(rx, by2 + 3.5, 1.5, 0, 7); ctx.fill(); }
+  }
+  ctx.fillStyle = 'rgba(255,255,255,0.25)';
+  for (let k = 1; k < 5; k++) ctx.fillRect(x + w - 9, by + 5 + ih * (1 - k / 5), 4, 1.5);
+
+  drawDoor(i, x, w, ix, iw);
+  drawGate(i, x, w);
+  drawPourButton(i, x, w);
+  ctx.restore();
+  if (!sealed) S.buttons.push({ x: x - lay.gap / 2, y: lay.gateY, w: w + lay.gap, h: lay.btnY + lay.btnH - lay.gateY, fn: () => pressOut(i) });
+}
+
+// Hinged gate across the mouth of the cart. A rod runs down the cart's left edge to the OPEN button:
+// press the button, the rod pulls, the gate swings open.
+function drawDoor(i, x, w, ix, iw) {
+  const c = S.carts[i];
+  const sealed = c.sealed;
+  const hy = doorTarget(), hx = ix;
+  const phi = -(sealed ? 0 : c.lev) * 1.3;   // opens upward into the hopper
+  const cs = Math.cos(phi), sn = Math.sin(phi);
+  ctx.save();
+  ctx.beginPath(); ctx.rect(x - 9, lay.gateY, w + 10, lay.btnY + lay.btnH - lay.gateY); ctx.clip();
+  ctx.lineCap = 'round';
+  // linkage rod from the button up to the gate hinge
+  const rx = x + 1.5, top = hy, bot = lay.btnY + 4, pull = (sealed ? 0 : c.lev) * 9;
+  ctx.strokeStyle = 'rgba(0,0,0,0.45)'; ctx.lineWidth = 6;
+  ctx.beginPath(); ctx.moveTo(rx, top); ctx.lineTo(rx, bot); ctx.stroke();
+  ctx.strokeStyle = sealed ? '#d9b04a' : '#aab1b7'; ctx.lineWidth = 4;
+  ctx.beginPath(); ctx.moveTo(rx, top); ctx.lineTo(rx, bot); ctx.stroke();
+  ctx.strokeStyle = 'rgba(255,255,255,0.5)'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(rx - 1, top); ctx.lineTo(rx - 1, bot); ctx.stroke();
+  // collar that slides down the rod when it is pulled
+  const cy2 = top + 26 + pull;
+  ctx.fillStyle = '#e0a63a'; ctx.beginPath(); ctx.roundRect(rx - 4.5, cy2 - 3, 9, 6, 2); ctx.fill();
+  // the gate flap, hinged on the left wall
+  const ex = hx + cs * iw, ey = hy + sn * iw;
+  ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = 7;
+  ctx.beginPath(); ctx.moveTo(hx, hy + 1.5); ctx.lineTo(ex, ey + 1.5); ctx.stroke();
+  ctx.strokeStyle = sealed ? '#d9b04a' : '#9aa1a8'; ctx.lineWidth = 5.5;
+  ctx.beginPath(); ctx.moveTo(hx, hy); ctx.lineTo(ex, ey); ctx.stroke();
+  ctx.strokeStyle = 'rgba(255,255,255,0.4)'; ctx.lineWidth = 1.4;
+  ctx.beginPath(); ctx.moveTo(hx, hy - 1.5); ctx.lineTo(ex, ey - 1.5); ctx.stroke();
+  ctx.fillStyle = '#c9ced3';
+  for (const t of [0.35, 0.7]) { ctx.beginPath(); ctx.arc(hx + cs * iw * t, hy + sn * iw * t, 1.4, 0, 7); ctx.fill(); }
+  ctx.fillStyle = '#2b2e32'; ctx.beginPath(); ctx.arc(hx, hy, 3.5, 0, 7); ctx.fill();
+  ctx.fillStyle = '#e0a63a'; ctx.beginPath(); ctx.arc(hx, hy, 1.8, 0, 7); ctx.fill();
+  ctx.lineCap = 'butt';
+  ctx.restore();
+}
+
+// Big labelled button under each cart: the main control. The whole cart column is tappable too.
+function drawPourButton(i, x, w) {
+  const c = S.carts[i];
+  const by = lay.btnY, bh = lay.btnH;
+  const top = topSeg(c);
+  const sealed = c.sealed, empty = !c.segs.length, busy = c.pouring;
+  const press = sealed ? 0 : c.lev * 3;
+  let base = '#f0a62b', label = 'OPEN', ink = '#3a2208';
+  if (sealed) { base = '#6b5a2a'; label = '\u2713 SEALED'; ink = '#ffe9a8'; }
+  else if (empty) { base = '#7a6a55'; label = 'EMPTY'; ink = '#3a2e22'; }
+  else if (busy) { base = '#d4781f'; label = 'OPENING'; ink = '#3a1a06'; }
+  glossBtn(x, by + press, w, bh - press, 12, base);
+  const cx = x + w / 2;
+  if (!sealed && !empty) {
+    drawGem(cx - 9, by + press + 15, 8.5, top.col);
+    // arrow: the gems go up and out of the cart
+    ctx.fillStyle = ink;
+    const bob = busy ? Math.sin(S.t * 14) * 1.5 : 0;
+    ctx.beginPath(); ctx.moveTo(cx + 12, by + press + 9 + bob); ctx.lineTo(cx + 19, by + press + 19 + bob); ctx.lineTo(cx + 5, by + press + 19 + bob); ctx.closePath(); ctx.fill();
+  }
+  txt(label, cx, by + press + bh - 17, w < 50 || label.length > 6 ? 10 : 11.5, ink, 'center', 800);
+}
+
+// The collector on top of every cart: an iron hopper that catches gems.
+function drawGate(i, x, w) {
+  const c = S.carts[i];
+  const gy = lay.gateY, gh = lay.gateH;
+  const total = cartTotal(c), top = topSeg(c);
+  const sealed = c.sealed;
+  const inc = !sealed && incoming(i);
+  const pulse = 0.5 + 0.5 * Math.sin(S.t * 10);
+  const cx = x + w / 2;
+  const edge = sealed ? '#ffd56b' : inc ? `rgb(255,${210 + pulse * 40},${110 + pulse * 40})` : '#1c1e21';
+
+  // chute from the belt down into the hopper
+  if (!sealed) {
+    ctx.save();
+    ctx.strokeStyle = c.pouring ? 'rgba(255,140,90,0.85)' : inc ? 'rgba(255,226,140,0.9)' : 'rgba(255,214,120,0.28)';
+    ctx.lineWidth = inc ? 3 : 2; ctx.setLineDash([4, 6]);
+    ctx.lineDashOffset = (c.pouring ? 1 : -1) * S.t * 40;
+    ctx.beginPath(); ctx.moveTo(cx, lay.y0 + BW / 2 - 1); ctx.lineTo(cx, gy); ctx.stroke();
+    ctx.restore();
+  }
+
+  // hopper (funnel)
+  const fh = 25;
+  ctx.beginPath(); ctx.moveTo(x - 1, gy); ctx.lineTo(x + w + 1, gy); ctx.lineTo(x + w * 0.82, gy + fh); ctx.lineTo(x + w * 0.18, gy + fh); ctx.closePath();
+  const fg = ctx.createLinearGradient(0, gy, 0, gy + fh);
+  fg.addColorStop(0, sealed ? '#8a7233' : '#7d848b'); fg.addColorStop(1, sealed ? '#5a4a1e' : '#3c4045');
+  ctx.fillStyle = fg; ctx.fill(); ctx.lineWidth = 2.5; ctx.strokeStyle = edge; ctx.stroke();
+  ctx.fillStyle = 'rgba(255,255,255,0.22)'; ctx.fillRect(x + 3, gy + 2, w - 6, 1.5);
+  // dark mouth, glows when a catchable gem is coming
+  ctx.beginPath(); ctx.ellipse(cx, gy + 3.5, w * 0.4, 3, 0, 0, Math.PI * 2);
+  ctx.fillStyle = inc ? `rgba(255,${190 + pulse * 40},90,0.9)` : '#0b0806'; ctx.fill();
+  ctx.fillStyle = '#c4cad0'; for (const rx of [x + 4, x + w - 4]) { ctx.beginPath(); ctx.arc(rx, gy + 8, 1.4, 0, 7); ctx.fill(); }
+
+  if (sealed) {
+    txt('FULL', cx, gy + 15, 12, '#fff0b8', 'center', 800, true);
+  } else {
+    // brass lamp showing what this hopper catches
+    ctx.beginPath(); ctx.arc(x + 13, gy + 15, 11, 0, Math.PI * 2);
+    ctx.fillStyle = '#16120d'; ctx.fill(); ctx.lineWidth = 2; ctx.strokeStyle = '#c9a24a'; ctx.stroke();
+    if (top) drawGem(x + 13, gy + 15, 7.5, top.col); else txt('?', x + 13, gy + 15.5, 14, '#d9bf94', 'center', 800);
+    txt(String(total), x + w - 4, gy + 15.5, 12, '#fff3da', 'right', 800, true);
+  }
+
+}
+
+// ---------- Lanes ----------
+function drawLock(cx, cy, open, color) {
+  ctx.save();
+  ctx.lineWidth = 3; ctx.strokeStyle = color; ctx.fillStyle = color;
+  ctx.beginPath();
+  if (open) ctx.arc(cx + 4, cy - 6, 6, Math.PI, Math.PI * 2.0);
+  else ctx.arc(cx, cy - 4, 6, Math.PI, 0);
+  ctx.stroke();
+  if (!open) { ctx.beginPath(); ctx.moveTo(cx - 6, cy - 4); ctx.lineTo(cx - 6, cy); ctx.moveTo(cx + 6, cy - 4); ctx.lineTo(cx + 6, cy); ctx.stroke(); }
+  else { ctx.beginPath(); ctx.moveTo(cx - 2, cy - 6); ctx.lineTo(cx - 2, cy); ctx.stroke(); }
+  rr(cx - 10, cy - 1, 20, 15, 4); ctx.fill();
+  ctx.fillStyle = '#1a120b';
+  ctx.beginPath(); ctx.arc(cx, cy + 6, 2.3, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+}
+
+function drawLane(i) {
+  const L = S.lanes[i];
+  if (!L) return;
+  const x = lay.colX(i), w = lay.cw, y = lay.lanesTop, h = lay.lanesH;
+  const sh = L.shake > 0 ? Math.sin(L.shake * 60) * 3 : 0;
+  ctx.save(); ctx.translate(sh, 0);
+
+  const cx = x + w / 2;
+  // ore chute up to the track
+  ctx.fillStyle = '#0b0806';
+  ctx.fillRect(cx - 7, lay.y1 + BW / 2 - 1, 14, y - (lay.y1 + BW / 2 - 1) + 4);
+  ctx.strokeStyle = '#6b7178'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(cx - 7, lay.y1 + BW / 2 - 1); ctx.lineTo(cx - 7, y + 2); ctx.moveTo(cx + 7, lay.y1 + BW / 2 - 1); ctx.lineTo(cx + 7, y + 2); ctx.stroke();
+
+  // bin
+  rr(x, y, w, h, 8); ctx.fillStyle = 'rgba(255,245,225,0.05)'; ctx.fill();
+  let yy = y + 5;
+  const scale = (h - 10) / 60;
+  const spans = [];
+  for (const ch of L.chunks) {
+    const hh = ch.amt * scale;
+    fillGems(x + 5, yy, w - 10, hh, ch.col, ch.amt, 4, false, (w - 10) / 4 * 0.64);
+    spans.push([ch, yy, hh]);
+    yy += hh;
+  }
+  for (const [ch, y0, hh] of spans) {
+    rr(x + w / 2 - 15, y0 + hh / 2 - 7, 30, 14, 7); ctx.fillStyle = 'rgba(10,6,3,0.72)'; ctx.fill();
+    txt(String(ch.amt), x + w / 2, y0 + hh / 2 + 0.5, 11, '#fff', 'center', 800);
+  }
+  rr(x, y, w, h, 8); ctx.lineWidth = 5; ctx.strokeStyle = '#b87a3e'; ctx.stroke();
+
+  if (!L.open) {
+    // wooden bars across the front, iron strap, and a padlock
+    for (const bx of [x + w * 0.25, x + w * 0.5, x + w * 0.75]) {
+      ctx.fillStyle = '#b87a3e'; ctx.fillRect(bx - 2.5, y + 3, 5, h - 6);
+      ctx.fillStyle = 'rgba(255,220,170,0.25)'; ctx.fillRect(bx - 2.5, y + 3, 1.5, h - 6);
+    }
+    ctx.fillStyle = '#4a4d52'; ctx.fillRect(x - 2, y + h * 0.55, w + 4, 7);
+    ctx.fillStyle = '#7b8288'; ctx.fillRect(x - 2, y + h * 0.55, w + 4, 1.5);
+    ctx.beginPath(); ctx.arc(cx, y, 15, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(18,12,8,0.95)'; ctx.fill(); ctx.lineWidth = 2; ctx.strokeStyle = '#ffd56b'; ctx.stroke();
+    ctx.save(); ctx.translate(cx, y + 1); ctx.scale(0.7, 0.7); drawLock(0, 0, false, '#ffd56b'); ctx.restore();
+    S.buttons.push({ x, y: y - 14, w, h: h + 14, fn: () => unlockLane(i) });
+  } else {
+    ctx.save(); ctx.translate(cx, y + h / 2); ctx.scale(0.9, 0.9); drawLock(0, 0, true, '#7a5d36'); ctx.restore();
+  }
+  ctx.restore();
+}
+
+// ---------- Effects + overlays ----------
+function drawEffects() {
+  const beltR = Math.min(GEM_R, 8.5);
+  for (const f of S.flights) {
+    const pp = flightPos(f), tt = Math.min(1, f.t / f.dur);
+    drawGem(pp.x, pp.y, f.kind === 'in' ? lerp(beltR, GEM_R, tt) : lerp(GEM_R, beltR, tt), f.col, pp.rot);
+  }
+  for (const p of S.particles) {
+    if (p.t < 0) continue;
+    const k = p.t / p.dur, e = p.burst ? 1 - (1 - k) * (1 - k) : k * k * (3 - 2 * k);
+    const x = p.x0 + (p.x1 - p.x0) * e;
+    const y = p.y0 + (p.y1 - p.y0) * e + (p.burst ? 60 * k * k : 0);
+    ctx.globalAlpha = p.burst ? 1 - k : 1;
+    drawGem(x, y, GEM_R * (p.burst ? 0.6 : 0.75), p.col, p.rot + k * 3);
+  }
+  ctx.globalAlpha = 1;
+  for (const f of S.floats) {
+    ctx.globalAlpha = 1 - f.t * f.t;
+    txt(f.text, f.x, f.y - f.t * 34, 15, f.color, 'center', 800, true);
+  }
+  ctx.globalAlpha = 1;
+  if (S.combo >= 2) {
+    const sc = 1 + Math.min(0.5, S.comboT > 2.2 ? (S.comboT - 2.2) * 1.6 : 0);
+    ctx.save(); ctx.translate(LW / 2, lay.hudH + 4); ctx.scale(sc, sc);
+    txt(`COMBO x${S.combo}`, 0, 0, 14, '#ffe08a', 'center', 800, true);
+    ctx.restore();
+  }
+}
+
+// ---------- First-moves coach (level 1): a pointing hand and one short line, no text walls ----------
+function coachTarget() {
+  if (S.level !== 0 || S.status !== 'play' || S.poured) return null;
+  if (!S.laneUsed) {
+    const i = S.lanes.findIndex(l => l && !l.open);
+    if (i < 0) return null;
+    return { x: lay.cx(i), y: lay.lanesTop + lay.lanesH * 0.5, text: 'Tap a lane to send its gems onto the belt', hand: 'below' };
+  }
+  const i = S.carts.findIndex(c => !c.sealed && c.segs.length > 1 && !c.pouring && topSeg(c).col !== c.segs[0].col);
+  if (i < 0) return null;
+  return { x: lay.cx(i), y: lay.btnY + lay.btnH / 2, text: 'Tap OPEN to put the top color back on the belt', hand: 'below' };
+}
+
+function drawCoach() {
+  const t = coachTarget();
+  if (!t) return;
+  const pulse = 0.5 + 0.5 * Math.sin(S.t * 5);
+  ctx.save();
+  ctx.lineWidth = 4; ctx.strokeStyle = `rgba(255,236,150,${0.55 + pulse * 0.4})`;
+  ctx.beginPath(); ctx.arc(t.x, t.y, 26 + pulse * 6, 0, Math.PI * 2); ctx.stroke();
+  // speech bubble
+  const words = t.text.split(' '), half = Math.ceil(words.length / 2);
+  const lines = [words.slice(0, half).join(' '), words.slice(half).join(' ')];
+  font(13, 800);
+  const bw = Math.min(LW - 24, Math.max(...lines.map(l => ctx.measureText(l).width)) + 30), bh = 50;
+  const bx = Math.max(12, Math.min(LW - 12 - bw, t.x - bw / 2)), by = t.y - 36 - bh - 8;
+  ctx.shadowColor = 'rgba(0,0,0,0.5)'; ctx.shadowBlur = 12; ctx.shadowOffsetY = 4;
+  rr(bx, by, bw, bh, 14); ctx.fillStyle = '#fff3da'; ctx.fill();
+  ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
+  ctx.beginPath(); ctx.moveTo(t.x - 9, by + bh - 1); ctx.lineTo(t.x + 9, by + bh - 1); ctx.lineTo(t.x, by + bh + 10); ctx.closePath(); ctx.fillStyle = '#fff3da'; ctx.fill();
+  txt(lines[0], bx + bw / 2, by + 17, 13, '#3a2208', 'center', 800);
+  txt(lines[1], bx + bw / 2, by + 35, 13, '#3a2208', 'center', 800);
+  // tapping hand
+  const bob = Math.abs(Math.sin(S.t * 5)) * 10;
+  ctx.font = '36px system-ui, "Apple Color Emoji", "Segoe UI Emoji", sans-serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('\u{1F446}', t.x + 8, t.y + 30 - bob);
+  ctx.restore();
+}
+
+function openSelect() { S.prevStatus = S.status; S.status = 'select'; S.page = Math.floor(S.level / 25); }
+
+function drawSelect() {
+  const cx = LW / 2, pw = Math.min(LW - 16, 340), ph = 470, px = cx - pw / 2, py = LH / 2 - ph / 2;
+  panel(px, py, pw, ph);
+  txt('LEVELS', cx, py + 34, 26, '#ffd56b', 'center', 800, true);
+  drawCoinPill(px + 16, py + 34, SAVE.coins);
+  const cell = 52, gap = 8, gridW = 5 * cell + 4 * gap, gx = cx - gridW / 2, gy = py + 64;
+  const page = S.page || 0;
+  const btns = [];
+  for (let k = 0; k < 25; k++) {
+    const i = page * 25 + k;
+    if (i >= LEVEL_COUNT) break;
+    const x = gx + (k % 5) * (cell + gap), y = gy + Math.floor(k / 5) * (cell + gap);
+    const open = isUnlocked(i), stars = SAVE.stars[i] || 0;
+    glossBtn(x, y, cell, cell, 12, open ? (i === S.level ? '#ffd24a' : '#f0a62b') : '#7a6a58');
+    if (open) {
+      txt(String(i + 1), x + cell / 2, y + 20, 19, '#3a2208', 'center', 800);
+      for (let q = 0; q < 3; q++) txt('★', x + cell / 2 + (q - 1) * 12, y + 38, 12, q < stars ? '#fff3b0' : 'rgba(58,34,8,0.35)', 'center', 800);
+      btns.push({ x, y, w: cell, h: cell, fn: () => loadLevel(i) });
+    } else {
+      ctx.save(); ctx.translate(x + cell / 2, y + cell / 2 - 1); ctx.scale(0.7, 0.7); drawLock(0, 0, false, '#3a2e22'); ctx.restore();
+    }
+  }
+  const ny = py + ph - 62;
+  const pages = Math.ceil(LEVEL_COUNT / 25);
+  txt(`${page + 1} / ${pages}`, cx, ny + 22, 14, '#e8d3b0', 'center', 800);
+  if (page > 0) { glossBtn(px + 20, ny, 56, 44, 12, '#f0a62b'); txt('◀', px + 48, ny + 20, 20, '#3a2208'); btns.push({ x: px + 20, y: ny, w: 56, h: 44, fn: () => { S.page = page - 1; } }); }
+  if (page < pages - 1) { glossBtn(px + pw - 76, ny, 56, 44, 12, '#f0a62b'); txt('▶', px + pw - 48, ny + 20, 20, '#3a2208'); btns.push({ x: px + pw - 76, y: ny, w: 56, h: 44, fn: () => { S.page = page + 1; } }); }
+  // order matters: later entries win. Tapping outside the panel closes it, tapping the panel itself does nothing.
+  S.buttons = [
+    { x: 0, y: 0, w: LW, h: LH, fn: () => { S.status = S.prevStatus || 'intro'; } },
+    { x: px, y: py, w: pw, h: ph, fn: () => {} },
+    ...btns,
+  ];
+}
+
+function drawOverlay() {
+  if (S.status === 'play') return;
+  ctx.fillStyle = 'rgba(8,5,3,0.8)'; ctx.fillRect(VX0 - 2, VY0 - 2, VW + 4, VH + 4);
+  const cx = LW / 2;
+  const L = LEVELS[S.level];
+  if (S.status === 'select') { drawSelect(); return; }
+  if (S.status === 'intro') {
+    const first = S.level === 0;
+    if (first) {
+      panel(cx - Math.min(160, LW / 2 - 8), LH / 2 - 244, Math.min(320, LW - 16), 500);
+      txt('GEM MINE', cx, LH / 2 - 208, 36, '#ffd56b', 'center', 800, true);
+      let y = LH / 2 - 158;
+      txt(`Level ${S.level + 1}`, cx, y, 14, '#e0c08a', 'center', 800); y += 28;
+      txt(L.name, cx, y, 30, '#ffd56b', 'center', 800); y += 46;
+      txt('Fill one cart with each gem color.', cx, y, 15, '#e8d3b0', 'center', 700); y += 40;
+      const steps = [
+        ['1', 'Tap a locked lane to send its gems', 'onto the conveyor belt.'],
+        ['2', 'Carts catch gems that match their', 'top color (an empty cart: a new color).'],
+        ['3', 'Tap OPEN: the cart\u2019s gate swings open', 'and its top color rolls onto the belt.'],
+      ];
+      for (const [n, a, b2] of steps) {
+        ctx.beginPath(); ctx.arc(cx - 128, y + 8, 13, 0, Math.PI * 2); ctx.fillStyle = '#c98a2b'; ctx.fill();
+        txt(n, cx - 128, y + 9, 14, '#1a120b', 'center', 800);
+        txt(a, cx - 107, y, 13, '#e8d3b0', 'left', 600); txt(b2, cx - 107, y + 18, 13, '#e8d3b0', 'left', 600);
+        y += 52;
+      }
+      txt('No rush. A full cart of one color seals.', cx, y + 4, 13, '#a98a62', 'center', 600);
+      const bw = 170, bh = 50, bx = cx - bw / 2, by = y + 30;
+      glossBtn(bx, by, bw, bh, 14, '#f0a62b');
+      txt('Start', cx, by + bh / 2 - 1, 19, '#3a2208', 'center', 800);
+      txt('All levels', cx, by + bh + 22, 14, '#e0c08a', 'center', 700);
+      S.buttons = [{ x: 0, y: 0, w: LW, h: LH, fn: () => { S.status = 'play'; } },
+                   { x: cx - 60, y: by + bh + 6, w: 120, h: 34, fn: openSelect }];
+    } else {
+      const ph = 330, pw = Math.min(300, LW - 16), py = LH / 2 - ph / 2;
+      panel(cx - pw / 2, py, pw, ph);
+      txt('GEM MINE', cx, py + 30, 20, '#ffd56b', 'center', 800, true);
+      txt(`Level ${S.level + 1}`, cx, py + 66, 14, '#e0c08a', 'center', 800);
+      txt(L.name, cx, py + 98, 28, '#ffd56b', 'center', 800, true);
+      const nCol = S.colors.length;
+      txt(`${nCol} gem colors`, cx, py + 138, 14, '#e8d3b0', 'center', 700);
+      const hint = (L.locked && !SAVE.owned[S.level]) ? `A spare cart costs ${L.locked.price} coins.` : (L.carts.every(c => c.length) ? 'No spare cart on this one!' : 'Seal one cart per color.');
+      txt(hint, cx, py + 162, 13, '#c9b08a', 'center', 600);
+      const bw = 170, bh = 50, bx = cx - bw / 2, by = py + 196;
+      glossBtn(bx, by, bw, bh, 14, '#f0a62b');
+      txt('Start', cx, by + bh / 2 - 1, 19, '#3a2208', 'center', 800);
+      txt('All levels', cx, by + bh + 24, 14, '#e0c08a', 'center', 700);
+      S.buttons = [{ x: 0, y: 0, w: LW, h: LH, fn: () => { S.status = 'play'; } },
+                   { x: cx - 60, y: by + bh + 8, w: 120, h: 34, fn: openSelect }];
+    }
+    return;
+  }
+  const won = S.status === 'won';
+  const cy = LH / 2 - 50;
+  panel(cx - Math.min(150, LW / 2 - 8), cy - 100, Math.min(300, LW - 16), 356);
+  txt(won ? 'Vein sorted!' : "Time's up", cx, cy - 40, 34, won ? '#ffd56b' : '#ff7b6b', 'center', 800);
+  if (won) {
+    for (let k = 0; k < 3; k++) txt('★', cx + (k - 1) * 46, cy + 4, 40, k < S.stars ? '#ffd56b' : '#4a3a28', 'center', 800);
+    txt(S.undosUsed ? `${S.undosUsed} undo${S.undosUsed > 1 ? 's' : ''} used` : 'No undos used!', cx, cy + 38, 14, '#e8d3b0', 'center', 600);
+    drawCoin(cx - 34, cy + 68, 12);
+    txt(`+${S.reward}`, cx - 16, cy + 68.5, 22, '#ffe08a', 'left', 800, true);
+  } else {
+    txt('Sealed ' + S.carts.filter(c => c.sealed).length + ' of ' + S.colors.length, cx, cy + 6, 16, '#e8d3b0', 'center', 600);
+  }
+  const bw = 170, bh = 50, bx = cx - bw / 2, by = cy + 98;
+  const hasNext = won && S.level < LEVELS.length - 1;
+  glossBtn(bx, by, bw, bh, 14, '#f0a62b');
+  txt(hasNext ? 'Next level' : won ? 'Play again' : 'Try again', cx, by + bh / 2 - 1, 19, '#3a2208', 'center', 800);
+  const lv = hasNext ? S.level + 1 : won ? 0 : S.level;
+  S.buttons = [{ x: bx, y: by, w: bw, h: bh, fn: () => loadLevel(lv) }];
+  if (won) {
+    txt('Replay level', cx - 58, by + bh + 28, 14, '#a98a62', 'center', 700);
+    S.buttons.push({ x: cx - 112, y: by + bh + 10, w: 108, h: 36, fn: () => loadLevel(S.level) });
+    txt('All levels', cx + 58, by + bh + 28, 14, '#e0c08a', 'center', 700);
+    S.buttons.push({ x: cx + 6, y: by + bh + 10, w: 108, h: 36, fn: openSelect });
+  } else {
+    txt('All levels', cx, by + bh + 28, 14, '#e0c08a', 'center', 700);
+    S.buttons.push({ x: cx - 54, y: by + bh + 10, w: 108, h: 36, fn: openSelect });
+  }
+}
+
+function draw() {
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.fillStyle = '#120d09'; ctx.fillRect(0, 0, W, H);
+  if (bgCanvas) ctx.drawImage(bgCanvas, 0, 0, W, H);   // cave wall for the whole screen, drawn 1:1
+  ctx.save();
+  ctx.translate(offX, offY);
+  ctx.scale(scale, scale);
+  if (S.shakeT > 0) ctx.translate((Math.random() - 0.5) * 16 * S.shakeT, (Math.random() - 0.5) * 16 * S.shakeT);
+  S.buttons = [];
+  drawBackground();
+  drawBelt();
+  for (let i = 0; i < lay.n; i++) { drawLane(i); drawCart(i); }
+  drawHud();
+  drawEffects();
+  drawCoach();
+  if (S.toast) {
+    ctx.globalAlpha = Math.min(1, S.toast.t * 2);
+    font(13); const w = ctx.measureText(S.toast.s).width + 28;
+    rr(LW / 2 - w / 2, lay.hudH - 2, w, 28, 14); ctx.fillStyle = 'rgba(10,6,3,0.92)'; ctx.fill();
+    txt(S.toast.s, LW / 2, lay.hudH + 12.5, 13, '#ffe2a8', 'center', 700);
+    ctx.globalAlpha = 1;
+  }
+  drawOverlay();
+  ctx.restore();
+}
+
+// ---------- Input ----------
+cv.addEventListener('pointerdown', e => {
+  e.preventDefault();
+  const rect = cv.getBoundingClientRect();
+  const x = (e.clientX - rect.left - offX) / scale, y = (e.clientY - rect.top - offY) / scale;
+  for (let k = S.buttons.length - 1; k >= 0; k--) {
+    const b = S.buttons[k];
+    if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) { b.fn(); return; }
+  }
+}, { passive: false });
+cv.addEventListener('contextmenu', e => e.preventDefault());
+
+// ---------- Boot ----------
+window.addEventListener('resize', resize);
+window.addEventListener('orientationchange', () => setTimeout(resize, 120));
+if (window.ResizeObserver) new ResizeObserver(() => resize()).observe(cv);   // fold / unfold, split-screen, browser bars
+const startLevel = Math.max(0, Math.min(LEVELS.length - 1, (parseInt(new URLSearchParams(location.search).get('level'), 10) || 1) - 1));
+loadLevel(startLevel);
+function frame(ts) {
+  const dt = Math.min(0.05, (ts - (last || ts)) / 1000);
+  last = ts;
+  update(dt);
+  draw();
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+window.game = { get S() { return S; }, CFG, LEVELS, SEEDS, TIMES, CAPS, makeLevel, pressOut, unlockLane, buyCart, undo, loadLevel, update: dt => update(dt), draw: () => draw() };
+</script>
+</body>
+</html>
