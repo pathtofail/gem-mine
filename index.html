@@ -132,15 +132,15 @@ const CAPS = [0, 140, 130, 140, 130, 130, 120, 120, 130, 130, 130, 130, 120, 120
 const TIMES = [240, 115, 210, 145, 135, 115, 145, 105, 130, 175, 140, 125, 150, 145, 145, 155, 185, 125, 195, 160, 175, 305, 230, 155, 155, 150, 240, 230, 225, 220, 205, 120, 210, 190, 135, 115, 185, 100, 105, 170, 205, 170, 360, 350, 200, 270, 235, 355, 240, 310];
 
 const LEVELS = [
-  {name:"Painted cart", time:600, beltCap:110, speed:11, carts:[[["P", 70], ["Y", 20]], [["Y", 40], ["P", 20]], [["Y", 40], ["P", 10]], []], lanes:[null, ["B", 20], ["B", 60], ["B", 20]], reserve:[null, null, null, "P"], hint:"A painted cart only takes its own color."},
-  {name:"Layers", time:600, beltCap:100, speed:10, carts:[[], [], [["R", 40], ["G", 20], ["P", 30]], [["R", 30], ["G", 60]]], lanes:[[["R", 30], ["G", 20]], null, ["P", 50], ["P", 20]], hint:"A layered lane opens one layer per tap."},
-  {name:"Chained", time:600, beltCap:90, speed:9, carts:[[["B", 40], ["Y", 30]], [["P", 60], ["Y", 20], ["B", 10]], [["B", 50]], []], lanes:[["P", 10], ["Y", 50], null, ["P", 30]], chain:{3:"B"}, hint:"A chained cart opens when its color is sealed."},
-  {name:"Assigned seats", time:600, beltCap:80, speed:8, carts:[[["G", 50], ["P", 40]], [["P", 10], ["R", 50], ["G", 10]], [["P", 50], ["G", 40]], [], []], lanes:[["B", 50], ["R", 50], null, ["B", 50], null], reserve:[null, null, null, "G", "P"]},
-  {name:"Deep lane", time:600, beltCap:90, speed:9, carts:[[["G", 50], ["R", 40]], [["G", 40], ["R", 40]], [], [], [["R", 20], ["Y", 60]]], lanes:[[["P", 40], ["G", 10], ["Y", 10]], null, null, ["Y", 30], ["P", 60]], reserve:[null, null, "P", null, null]},
-  {name:"Locked storage", time:600, beltCap:80, speed:8, carts:[[["B", 70], ["G", 20]], [], [["B", 20], ["G", 30], ["B", 10], ["R", 30]], [], [["P", 30], ["R", 60]]], lanes:[[["G", 50], ["R", 10]], null, ["P", 50], ["P", 20], null], chain:{3:"B"}},
-  {name:"Gatekeepers", time:600, beltCap:80, speed:8, carts:[[], [], [], [["R", 50], ["B", 40]], [["R", 10], ["P", 30], ["G", 30]], [["R", 40], ["G", 10], ["B", 20], ["P", 10]]], lanes:[null, null, ["B", 40], ["G", 60], ["P", 60], null], reserve:[null, "R", null, null, null, null], chain:{0:"B"}},
-  {name:"Everything", time:600, beltCap:70, speed:7, carts:[[["G", 20], ["R", 50], ["G", 20]], [["R", 10], ["Y", 10], ["G", 30], ["B", 20], ["R", 20]], [], [], [["B", 80], ["Y", 10]], []], lanes:[null, [["Y", 20], ["G", 30]], null, ["Y", 60], ["R", 20], null], reserve:[null, null, null, null, null, "B"], chain:{2:"G"}},
-  {name:"Tight belt", time:600, beltCap:80, speed:8, carts:[[["R", 20], ["P", 60], ["B", 10]], [["P", 10], ["G", 80]], [], [["B", 70], ["G", 20]], [["R", 50], ["B", 20], ["P", 20]], []], lanes:[null, null, [["R", 30], ["P", 10]], ["Y", 40], null, ["Y", 60]], reserve:[null, null, "P", null, null, null], chain:{5:"P"}},
+  {name:"First pour", time:600, beltCap:100, speed:10, carts:[[], [], [], []], lanes:[["R", 60], ["R", 40], ["B", 60], ["B", 40]]},
+  {name:"Dig out", time:600, beltCap:100, speed:10, carts:[[["R", 40], ["B", 30]], [["B", 30], ["G", 40]], [], []], lanes:[["R", 60], ["B", 40], ["G", 60], null]},
+  {name:"Belt limit", time:600, beltCap:50, speed:5, carts:[[["P", 60], ["R", 30]], [], [["P", 20], ["R", 50]], [["G", 60], ["P", 20]]], lanes:[["R", 20], ["G", 20], ["G", 20], null], hint:"The belt only holds 50 gems."},
+  {name:"Painted cart", time:600, beltCap:60, speed:6, carts:[[["R", 30], ["G", 10], ["R", 40]], [], [["R", 30], ["Y", 40]], [["G", 70]]], lanes:[["G", 20], null, ["Y", 30], ["Y", 30]], reserve:[null, "R", null, null], hint:"A painted cart only takes its own color."},
+  {name:"Tidy up", time:600, beltCap:100, speed:10, carts:[[["G", 70], ["B", 20]], [], [["R", 40], ["P", 40], ["G", 10]], [["R", 60], ["G", 20]], []], lanes:[["B", 60], null, ["P", 60], ["B", 20], null]},
+  {name:"Layers", time:600, beltCap:70, speed:7, carts:[[], [["Y", 20], ["P", 40]], [["R", 40], ["P", 10], ["Y", 20], ["R", 10]], []], lanes:[null, [["P", 50], ["Y", 10]], ["R", 50], ["Y", 50]], hint:"A layered lane opens one layer per tap."},
+  {name:"Chained", time:600, beltCap:80, speed:8, carts:[[], [["G", 40], ["R", 20]], [["G", 40], ["P", 50]], [["R", 50]]], lanes:[["G", 20], null, ["R", 30], ["P", 50]], chain:{0:"P"}, hint:"A chained cart opens when its color is sealed."},
+  {name:"Deep lane", time:600, beltCap:70, speed:7, carts:[[], [["R", 60], ["P", 30]], [], [["P", 20], ["G", 60]], [["G", 20], ["B", 30], ["R", 10], ["P", 10], ["R", 20]]], lanes:[[["G", 20], ["B", 10], ["R", 10]], null, ["P", 40], ["B", 60], null], reserve:["B", null, null, null, null]},
+  {name:"Assigned seats", time:600, beltCap:80, speed:8, carts:[[["G", 50], ["P", 40]], [["P", 10], ["R", 50], ["G", 10]], [["P", 50], ["G", 40]], [], []], lanes:[["B", 50], ["R", 50], null, ["B", 50], null], reserve:[null, null, null, "G", "P"], hint:"Both empty carts are painted. Each takes only its own color."},
   {name:"Deep mine", time:600, beltCap:80, speed:8, carts:[[["G", 80]], [], [["P", 70], ["Y", 20]], [["R", 20], ["B", 70]], [], [["R", 40], ["B", 10], ["Y", 40]]], lanes:[null, [["R", 40], ["B", 20]], ["P", 30], [["G", 20], ["Y", 10], ["Y", 30]], null, null], reserve:[null, "P", null, null, null, null], chain:{4:"B"}}
 ];
 
@@ -308,7 +308,7 @@ function loadLevel(i) {
     lanes: laneLayers.map(l => l ? { chunks: l.map(([col, amt]) => ({ col, amt })), total: l[0][1], open: false, shake: 0 } : null),
     undos: CFG.UNDOS, history: [],
     combo: 0, comboT: 0, shakeT: 0,
-    particles: [], floats: [],
+    particles: [], floats: [], taps: [], sparks: [], confetti: [],
     toast: null, buttons: [], stars: 0,
   };
   resize();
@@ -452,7 +452,8 @@ function landGem(f) {
   if (c.sealed) return;
   const t = topSeg(c);
   if (t && t.col === f.col) t.amt += 1; else c.segs.push({ col: f.col, amt: 1 });
-  c.flash = 0.6; c.sessN += 1; c.sessT = 0.25; c.sessCol = f.col;
+  c.flash = 0.6; c.sessN += 1; c.sessT = 0.25; c.sessCol = f.col; c.bump = 1;
+  if (c.sessN % 3 === 1) S.sparks.push({ x: lay.cx(f.i) + (hash(S.gid + c.sessN) - 0.5) * 20, y: lay.bodyY + 14, t: 0, col: f.col });
   if (c.segs.length === 1 && c.segs[0].amt >= CFG.CART_CAP) sealCart(f.i);
 }
 function updateFlights(dt) {
@@ -593,12 +594,20 @@ function runCollectors() {
   });
 }
 
+function confettiBurst(x, y, col, n, spread = 1) {
+  const palette = [COLORS[col].c, COLORS[col].l, '#ffe08a', '#ffffff'];
+  for (let k = 0; k < n; k++) {
+    const a = -Math.PI / 2 + (hash(k * 3 + S.gid) - 0.5) * 2.4 * spread, v = 160 + hash(k * 5 + 7 + S.gid) * 260;
+    S.confetti.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, rot: hash(k + 1) * 6, vr: (hash(k + 9) - 0.5) * 14, t: 0, life: 1.4 + hash(k + 4) * 0.8, c: palette[k % palette.length], w: 5 + hash(k + 2) * 5 });
+  }
+}
 function sealCart(i) {
   const c = S.carts[i];
   c.sealed = true; c.sealT = 1;
   const col = c.segs[0].col;
   const cx = lay.cx(i), cy = lay.bodyY + lay.bodyH / 2;
   burst(cx, cy, col, 26);
+  confettiBurst(cx, cy, col, 46);
   addFloat(cx, cy, 'SEALED!', '#ffe08a');
   S.shakeT = 0.35;
   for (const o of S.carts) if (o.chainCol === col) { o.chainCol = null; o.flash = 1; burst(lay.cx(S.carts.indexOf(o)), lay.bodyY + lay.bodyH * 0.4, col, 16); toast('A cart is unlocked!'); }
@@ -609,6 +618,7 @@ function checkWin() {
   const sealedColors = new Set(S.carts.filter(c => c.sealed).map(c => c.segs[0].col));
   if (S.colors.every(col => sealedColors.has(col))) {
     S.status = 'won';
+    for (let k = 0; k < 3; k++) confettiBurst(LW * (0.2 + 0.3 * k), LH * 0.55, S.colors[k % S.colors.length], 40, 1.4);
     S.undosUsed = CFG.UNDOS - S.undos;
     S.stars = 3 - Math.min(2, S.undosUsed);              // stars reward clean play, never speed
     S.reward = levelReward(S.level, S.stars, !SAVE.stars[S.level]);
@@ -627,6 +637,7 @@ function update(dt) {
   S.shakeT = Math.max(0, S.shakeT - dt);
   for (const c of S.carts) {
     c.flash = Math.max(0, c.flash - dt * 2.5);
+    c.bump = Math.max(0, (c.bump || 0) - dt * 7);
     c.outFlash = Math.max(0, c.outFlash - dt);
     c.lev += ((c.pouring ? 1 : 0) - c.lev) * Math.min(1, dt * 10);
     const dyT = doorTarget();
@@ -647,6 +658,10 @@ function update(dt) {
   }
   for (const l of S.lanes) if (l) l.shake = Math.max(0, l.shake - dt);
   for (const p of S.particles) p.t += dt;
+  for (const t of S.taps) t.t += dt; S.taps = S.taps.filter(t => t.t < 0.45);
+  for (const s of S.sparks) s.t += dt; S.sparks = S.sparks.filter(s => s.t < 0.5);
+  for (const f of S.confetti) { f.t += dt; f.x += f.vx * dt; f.y += f.vy * dt; f.vy += 520 * dt; f.vx *= 1 - dt * 0.8; f.rot += f.vr * dt; }
+  S.confetti = S.confetti.filter(f => f.t < f.life);
   updateFlights(dt);
   S.particles = S.particles.filter(p => p.t < p.dur);
   for (const f of S.floats) f.t += dt;
@@ -1112,7 +1127,7 @@ function drawCart(i) {
   if (c.locked) { drawLockedCart(i, x, w); return; }
   if (c.chainCol) { drawChainCart(i, x, w); return; }
   const sh = c.shake > 0 ? Math.sin(c.shake * 60) * 3 : 0;
-  ctx.save(); ctx.translate(sh, 0);
+  ctx.save(); ctx.translate(sh, -(c.bump || 0) * 3);
 
   const by = lay.bodyY, bh = lay.bodyH;
   const sealed = c.sealed;
@@ -1261,7 +1276,7 @@ function drawGate(i, x, w) {
     // brass lamp showing what this hopper catches
     ctx.beginPath(); ctx.arc(x + 13, gy + 15, 11, 0, Math.PI * 2);
     ctx.fillStyle = '#16120d'; ctx.fill(); ctx.lineWidth = 2; ctx.strokeStyle = '#c9a24a'; ctx.stroke();
-    if (top) drawGem(x + 13, gy + 15, 7.5, top.col); else txt('?', x + 13, gy + 15.5, 14, '#d9bf94', 'center', 800);
+    if (top) drawGem(x + 13, gy + 15, 7.5, top.col); else if (S.carts[i].reserve) drawGem(x + 13, gy + 15, 7.5, S.carts[i].reserve); else txt('?', x + 13, gy + 15.5, 14, '#d9bf94', 'center', 800);
     txt(String(total), x + w - 4, gy + 15.5, 12, '#fff3da', 'right', 800, true);
   }
 
@@ -1348,6 +1363,19 @@ function drawEffects() {
     drawGem(x, y, GEM_R * (p.burst ? 0.6 : 0.75), p.col, p.rot + k * 3);
   }
   ctx.globalAlpha = 1;
+  for (const t of S.taps) {                                  // a ripple where you tapped
+    const k = t.t / 0.45; ctx.globalAlpha = 0.7 * (1 - k);
+    ctx.beginPath(); ctx.arc(t.x, t.y, t.r * (0.5 + k * 0.9), 0, Math.PI * 2); ctx.lineWidth = 4 * (1 - k) + 1; ctx.strokeStyle = '#ffe9a8'; ctx.stroke();
+  }
+  for (const s of S.sparks) {                                // a sparkle where a gem lands
+    const k = s.t / 0.5, r = 4 + 9 * Math.sin(k * Math.PI); ctx.globalAlpha = 1 - k; ctx.fillStyle = '#fff6d0';
+    ctx.beginPath(); for (let a = 0; a < 8; a++) { const rr2 = a % 2 ? r * 0.35 : r, an = a * Math.PI / 4; ctx.lineTo(s.x + Math.cos(an) * rr2, s.y + Math.sin(an) * rr2); } ctx.closePath(); ctx.fill();
+  }
+  for (const f of S.confetti) {
+    ctx.globalAlpha = Math.min(1, (f.life - f.t) * 2); ctx.save(); ctx.translate(f.x, f.y); ctx.rotate(f.rot); ctx.scale(1, Math.abs(Math.cos(f.rot * 1.3)) * 0.8 + 0.2);
+    ctx.fillStyle = f.c; ctx.fillRect(-f.w / 2, -f.w / 3, f.w, f.w * 0.66); ctx.restore();
+  }
+  ctx.globalAlpha = 1;
   for (const f of S.floats) {
     ctx.globalAlpha = 1 - f.t * f.t;
     txt(f.text, f.x, f.y - f.t * 34, 15, f.color, 'center', 800, true);
@@ -1363,16 +1391,18 @@ function drawEffects() {
 
 // ---------- First-moves coach (level 1): a pointing hand and one short line, no text walls ----------
 function coachTarget() {
-  return null;
-  if (S.level !== 0 || S.status !== 'play' || S.poured) return null;
-  if (!S.laneUsed) {
+  if (S.status !== 'play') return null;
+  if (S.level === 0 && !S.laneUsed) {                      // level 1: the only thing to learn is tapping a lane
     const i = S.lanes.findIndex(l => l && !l.open);
     if (i < 0) return null;
     return { x: lay.cx(i), y: lay.lanesTop + lay.lanesH * 0.5, text: 'Tap a lane to send its gems onto the belt', hand: 'below' };
   }
-  const i = S.carts.findIndex(c => !c.sealed && c.segs.length > 1 && !c.pouring && topSeg(c).col !== c.segs[0].col);
-  if (i < 0) return null;
-  return { x: lay.cx(i), y: lay.btnY + lay.btnH / 2, text: 'Tap OPEN to put the top color back on the belt', hand: 'below' };
+  if (S.level === 1 && !S.poured) {                        // level 2: a buried color, so OPEN a cart
+    const i = S.carts.findIndex(c => !c.sealed && c.segs.length > 1 && !c.pouring && topSeg(c).col !== c.segs[0].col);
+    if (i < 0) return null;
+    return { x: lay.cx(i), y: lay.btnY + lay.btnH / 2, text: 'Tap OPEN to put the top color back on the belt', hand: 'below' };
+  }
+  return null;
 }
 
 function drawCoach() {
@@ -1448,25 +1478,14 @@ function drawOverlay() {
   if (S.status === 'intro') {
     const first = S.level === 0;
     if (first) {
-      panel(cx - Math.min(160, LW / 2 - 8), LH / 2 - 244, Math.min(320, LW - 16), 500);
-      txt('GEM MINE', cx, LH / 2 - 208, 36, '#ffd56b', 'center', 800, true);
-      let y = LH / 2 - 158;
+      panel(cx - Math.min(160, LW / 2 - 8), LH / 2 - 190, Math.min(320, LW - 16), 340);
+      txt('GEM MINE', cx, LH / 2 - 154, 36, '#ffd56b', 'center', 800, true);
+      let y = LH / 2 - 104;
       txt(`Level ${S.level + 1}`, cx, y, 14, '#e0c08a', 'center', 800); y += 28;
       txt(L.name, cx, y, 30, '#ffd56b', 'center', 800); y += 46;
       txt('Fill one cart with each gem color.', cx, y, 15, '#e8d3b0', 'center', 700); y += 40;
-      const steps = [
-        ['1', 'Tap a locked lane to send its gems', 'onto the conveyor belt.'],
-        ['2', 'Carts catch gems that match their', 'top color (an empty cart: a new color).'],
-        ['3', 'Tap OPEN: the cart\u2019s gate swings open', 'and its top color rolls onto the belt.'],
-      ];
-      for (const [n, a, b2] of steps) {
-        ctx.beginPath(); ctx.arc(cx - 128, y + 8, 13, 0, Math.PI * 2); ctx.fillStyle = '#c98a2b'; ctx.fill();
-        txt(n, cx - 128, y + 9, 14, '#1a120b', 'center', 800);
-        txt(a, cx - 107, y, 13, '#e8d3b0', 'left', 600); txt(b2, cx - 107, y + 18, 13, '#e8d3b0', 'left', 600);
-        y += 52;
-      }
-      txt('No rush. A full cart of one color seals.', cx, y + 4, 13, '#a98a62', 'center', 600);
-      const bw = 170, bh = 50, bx = cx - bw / 2, by = y + 30;
+      txt('No rush. A full cart of one color seals.', cx, y - 10, 13, '#a98a62', 'center', 600);
+      const bw = 170, bh = 50, bx = cx - bw / 2, by = y + 14;
       glossBtn(bx, by, bw, bh, 14, '#f0a62b');
       txt('Start', cx, by + bh / 2 - 1, 19, '#3a2208', 'center', 800);
       txt('All levels', cx, by + bh + 22, 14, '#e0c08a', 'center', 700);
@@ -1480,7 +1499,7 @@ function drawOverlay() {
       txt(L.name, cx, py + 98, 28, '#ffd56b', 'center', 800, true);
       const nCol = S.colors.length;
       txt(`${nCol} gem colors`, cx, py + 138, 14, '#e8d3b0', 'center', 700);
-      const hint = L.hint || (L.locked && !SAVE.owned[S.level]) ? `A spare cart costs ${L.locked.price} coins.` : (L.carts.every(c => c.length) ? 'No spare cart on this one!' : 'Seal one cart per color.');
+      const hint = L.hint || ((L.locked && !SAVE.owned[S.level]) ? `A spare cart costs ${L.locked.price} coins.` : (L.carts.every(c => c.length) ? 'No spare cart on this one!' : 'Seal one cart per color.'));
       txt(hint, cx, py + 162, 13, '#c9b08a', 'center', 600);
       const bw = 170, bh = 50, bx = cx - bw / 2, by = py + 196;
       glossBtn(bx, by, bw, bh, 14, '#f0a62b');
@@ -1553,7 +1572,7 @@ cv.addEventListener('pointerdown', e => {
   const x = (e.clientX - rect.left - offX) / scale, y = (e.clientY - rect.top - offY) / scale;
   for (let k = S.buttons.length - 1; k >= 0; k--) {
     const b = S.buttons[k];
-    if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) { b.fn(); return; }
+    if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) { if (b.w < 200 && b.h < 200) S.taps.push({ x: b.x + b.w / 2, y: b.y + b.h / 2, r: Math.min(b.w, b.h) * 0.6, t: 0 }); b.fn(); return; }
   }
 }, { passive: false });
 cv.addEventListener('contextmenu', e => e.preventDefault());
