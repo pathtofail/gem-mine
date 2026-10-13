@@ -295,7 +295,7 @@ function loadLevel(i) {
   S = {
     level: i, colors,
     t: 0, time: L.time,
-    status: 'intro', // intro | play | won | lost
+    status: 'play', // home | play | won | select
     phase: 0, rot: 0, gid: 0, pours: [], flights: [],
     cells: Array(CFG.BELT_CAP).fill(null),   // one slot per gem on the belt
     carts: L.carts.map((c, ci) => ({
@@ -313,6 +313,7 @@ function loadLevel(i) {
   };
   resize();
   resetGates();
+  if (L.hint) S.toast = { s: L.hint, t: 5 };
 }
 
 // The gate sits across the mouth of the cart, right under the hopper, which is where gems leave; the handle on the left side swings it open.
@@ -667,7 +668,7 @@ function update(dt) {
   for (const f of S.floats) f.t += dt;
   S.floats = S.floats.filter(f => f.t < 1);
 
-  if (S.status === 'play' || S.status === 'lost' || S.status === 'intro' || S.status === 'select') {
+  if (S.status === 'play' || S.status === 'lost' || S.status === 'intro' || S.status === 'select' || S.status === 'home') {
     S.phase = mod(S.phase + CFG.SPEED * dt, CFG.BELT_CAP);
   }
   const k = 1 - Math.exp(-dt * 9), dk = Math.exp(-dt * 9);
@@ -679,14 +680,9 @@ function update(dt) {
     if (g.pop > 0.995) g.pop = 1;
   }
   if (S.status === 'play') {
-    S.time -= dt;
     runPours();
     runCollectors();
     checkWin();
-    if (S.status === 'play' && S.time <= 0) {
-      S.time = 0; S.status = 'lost';
-      
-    }
   }
 }
 
@@ -904,12 +900,11 @@ function drawHud() {
   ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(VX0, lay.hudH - 6, VW, 5);
   [[VX0 + 6, 6], [VX0 + VW - 6, 6], [VX0 + 6, lay.hudH - 16], [VX0 + VW - 6, lay.hudH - 16]].forEach(([nx, ny]) => nail(nx, ny));
   const used = occupied();
-  const t = Math.ceil(S.time), m = Math.floor(t / 60), s = String(t % 60).padStart(2, '0');
-  const low = S.time < 15 && S.status === 'play';
-  txt(`${m}:${s}`, 14, 26, 24, low && Math.floor(S.t * 4) % 2 ? '#ff6b6b' : '#ffe2a8', 'left', 800);
+  txt('LEVEL ' + (S.level + 1), 14, 20, 10.5, '#a98a62', 'left', 800);
+  txt(LEVELS[S.level].name, 14, 39, 19, '#ffe2a8', 'left', 800, true);
 
   // belt gauge
-  const gx = 112, gw = Math.max(90, LW - 112 - 112), gy = 17, gh = 18;
+  const gx = 150, gw = Math.max(90, LW - 150 - 112), gy = 17, gh = 18;
   const frac = used / CFG.BELT_CAP;
   const hot = frac > 0.85;
   rr(gx, gy, gw, gh, 9); ctx.fillStyle = '#2a1a0c'; ctx.fill();
@@ -939,9 +934,7 @@ function drawHud() {
   S.buttons.push({ x: rx - 4, y: by - 4, w: bs + 8, h: bs + 8, fn: () => loadLevel(S.level) });
 
   // goal row: level name + one pip per color that still has to be sealed
-  const nameStr = `${S.level + 1}. ${LEVELS[S.level].name}`;
-  txt(nameStr, 14, 56, 13, '#d9bf94', 'left', 700);
-  font(13, 700); drawCoinPill(14 + ctx.measureText(nameStr).width + 10, 56, SAVE.coins);
+  txt('Seal one cart for each color', 14, 57, 12.5, '#e8d3b0', 'left', 700);
   const sealedColors = new Set(S.carts.filter(c => c.sealed).map(c => c.segs[0].col));
   const pw = 26, startX = LW - 14 - S.colors.length * pw;
   S.colors.forEach((col, k) => {
@@ -1463,7 +1456,7 @@ function drawSelect() {
   if (page < pages - 1) { glossBtn(px + pw - 76, ny, 56, 44, 12, '#f0a62b'); txt('▶', px + pw - 48, ny + 20, 20, '#3a2208'); btns.push({ x: px + pw - 76, y: ny, w: 56, h: 44, fn: () => { S.page = page + 1; } }); }
   // order matters: later entries win. Tapping outside the panel closes it, tapping the panel itself does nothing.
   S.buttons = [
-    { x: 0, y: 0, w: LW, h: LH, fn: () => { S.status = S.prevStatus || 'intro'; } },
+    { x: 0, y: 0, w: LW, h: LH, fn: () => { S.status = S.prevStatus || 'play'; } },
     { x: px, y: py, w: pw, h: ph, fn: () => {} },
     ...btns,
   ];
@@ -1539,6 +1532,59 @@ function drawOverlay() {
   }
 }
 
+function drawFaceOn(x, y, r, look = [0, 0.3]) {
+  const blink = Math.sin(S.t * 1.4 + x * 0.05) > 0.985;
+  for (const sx of [-1, 1]) {
+    if (blink) { ctx.strokeStyle = '#2a1a0c'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(x + sx * r * 0.42, y, r * 0.16, Math.PI * 1.1, Math.PI * 1.9); ctx.stroke(); continue; }
+    ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(x + sx * r * 0.42, y, r * 0.24, 0, 7); ctx.fill();
+    ctx.fillStyle = '#2a1a0c'; ctx.beginPath(); ctx.arc(x + sx * r * 0.42 + look[0] * r * 0.08, y + look[1] * r * 0.06, r * 0.13, 0, 7); ctx.fill();
+  }
+  ctx.strokeStyle = '#2a1a0c'; ctx.lineWidth = 2; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(x - r * 0.2, y + r * 0.42); ctx.quadraticCurveTo(x, y + r * 0.62, x + r * 0.2, y + r * 0.42); ctx.stroke();
+  ctx.fillStyle = 'rgba(255,110,140,0.35)'; for (const sx of [-1, 1]) { ctx.beginPath(); ctx.ellipse(x + sx * r * 0.7, y + r * 0.35, r * 0.14, r * 0.09, 0, 0, 7); ctx.fill(); }
+}
+function drawHome() {
+  const vg = ctx.createRadialGradient(LW / 2, 360, 80, LW / 2, 360, 520); vg.addColorStop(0, 'rgba(255,190,90,0.28)'); vg.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = vg; ctx.fillRect(-offX / scale, -offY / scale, W / scale, H / scale);
+  for (let k = 0; k < 22; k++) {                              // glints drifting up in the cave
+    const x = hash(k + 3) * LW, y = LH - ((S.t * (12 + hash(k + 8) * 18) + hash(k + 2) * (LH + 40)) % (LH + 40)) + 20, c = COLOR_KEYS[k % 5];
+    ctx.globalAlpha = 0.55; drawGem(x, y, 4 + hash(k + 11) * 4, c, S.t + k);
+  }
+  ctx.globalAlpha = 1;
+  const word = (s, y, size, off) => {
+    font(size, 900); ctx.textBaseline = 'middle'; const ws = [...s].map(ch => ctx.measureText(ch).width), tot = ws.reduce((a, b2) => a + b2, 0);
+    let x = LW / 2 - tot / 2;
+    [...s].forEach((ch, k) => {
+      const bob = Math.sin(S.t * 2.4 + k * 0.8 + off) * 5, rot = Math.sin(S.t * 2 + k) * 0.05, col = COLORS[COLOR_KEYS[(k + off) % 5]];
+      ctx.save(); ctx.translate(x + ws[k] / 2, y + bob); ctx.rotate(rot); ctx.textAlign = 'center'; ctx.lineJoin = 'round';
+      ctx.lineWidth = 12; ctx.strokeStyle = '#2a1608'; ctx.strokeText(ch, 0, 0);
+      const g = ctx.createLinearGradient(0, -size * 0.5, 0, size * 0.5); g.addColorStop(0, col.l); g.addColorStop(0.55, col.c); g.addColorStop(1, col.d);
+      ctx.fillStyle = g; ctx.fillText(ch, 0, 0); ctx.restore(); x += ws[k];
+    });
+  };
+  word('Gem', 150, 88, 0); word('Mine', 238, 88, 2);
+  // the mascot: a mine cart heaped with gems, with a face
+  const bob = Math.sin(S.t * 2.2) * 5, cx0 = LW / 2, cy0 = 400 + bob;
+  [[-52, -52, 'R'], [-18, -66, 'B'], [20, -62, 'Y'], [54, -48, 'G'], [-34, -34, 'P'], [8, -40, 'R'], [40, -26, 'B']].forEach(([dx, dy, c], k) => drawGem(cx0 + dx, cy0 + dy - Math.sin(S.t * 3 + k) * 2, 22, c, k));
+  ctx.save(); ctx.shadowColor = 'rgba(0,0,0,0.5)'; ctx.shadowBlur = 16; ctx.shadowOffsetY = 8;
+  ctx.beginPath(); ctx.moveTo(cx0 - 96, cy0 - 20); ctx.lineTo(cx0 + 96, cy0 - 20); ctx.lineTo(cx0 + 78, cy0 + 70); ctx.lineTo(cx0 - 78, cy0 + 70); ctx.closePath();
+  const cg = ctx.createLinearGradient(0, cy0 - 20, 0, cy0 + 70); cg.addColorStop(0, '#c98a4e'); cg.addColorStop(1, '#8a5430'); ctx.fillStyle = cg; ctx.fill(); ctx.restore();
+  ctx.fillStyle = '#6a6f75'; ctx.fillRect(cx0 - 100, cy0 - 26, 200, 14); ctx.fillStyle = '#aab1b7'; ctx.fillRect(cx0 - 100, cy0 - 26, 200, 3);
+  ctx.fillStyle = '#6a6f75'; ctx.fillRect(cx0 - 82, cy0 + 50, 164, 10);
+  drawFaceOn(cx0, cy0 + 16, 40, [Math.sin(S.t * 0.9) * 0.8, 0.3]);
+  wheel(cx0 - 52, cy0 + 82, 17); wheel(cx0 + 52, cy0 + 82, 17);
+  ctx.fillStyle = '#3a2a1a'; ctx.fillRect(cx0 - 150, cy0 + 100, 300, 8); ctx.fillStyle = '#7a5a36'; for (let k = -7; k <= 7; k++) ctx.fillRect(cx0 + k * 20 - 4, cy0 + 106, 8, 12);
+  const n = Math.min(LEVELS.length, Math.max(1, SAVE.unlocked));
+  glossBtn(LW / 2 - 112, 556, 224, 80, 30, '#f0a62b');
+  txt('PLAY', LW / 2, 584, 38, '#3a2208', 'center', 900); txt('Level ' + n, LW / 2, 616, 15, '#6a4310', 'center', 800);
+  txt('All levels', LW / 2, 676, 17, '#ffe2a8', 'center', 800, true);
+  drawCoinPill(LW - 14 - 60, 24, SAVE.coins);
+  const stars = Object.keys(SAVE.stars).reduce((a, k) => a + SAVE.stars[k], 0);
+  if (stars) txt('\u2605 ' + stars + ' / ' + LEVELS.length * 3, LW / 2, 724, 16, '#ffe2a8', 'center', 800, true);
+  S.buttons = [
+    { x: LW / 2 - 112, y: 556, w: 224, h: 80, fn: () => { loadLevel(n - 1); } },
+    { x: LW / 2 - 70, y: 656, w: 140, h: 36, fn: () => { S.prevStatus = 'home'; S.status = 'select'; S.page = 0; } },
+  ];
+}
 function draw() {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.fillStyle = '#120d09'; ctx.fillRect(0, 0, W, H);
@@ -1548,6 +1594,7 @@ function draw() {
   ctx.scale(scale, scale);
   if (S.shakeT > 0) ctx.translate((Math.random() - 0.5) * 16 * S.shakeT, (Math.random() - 0.5) * 16 * S.shakeT);
   S.buttons = [];
+  if (S.status === 'home') { drawHome(); drawEffects(); ctx.restore(); return; }
   drawBackground();
   drawBelt();
   for (let i = 0; i < lay.n; i++) { drawLane(i); drawCart(i); }
@@ -1583,6 +1630,7 @@ window.addEventListener('orientationchange', () => setTimeout(resize, 120));
 if (window.ResizeObserver) new ResizeObserver(() => resize()).observe(cv);   // fold / unfold, split-screen, browser bars
 const startLevel = DEV ? Math.max(0, Math.min(LEVELS.length - 1, (parseInt(new URLSearchParams(location.search).get('level'), 10) || 1) - 1)) : 0;
 loadLevel(startLevel);
+if (!(DEV && new URLSearchParams(location.search).has('level'))) S.status = 'home';
 function frame(ts) {
   const dt = Math.min(0.05, (ts - (last || ts)) / 1000);
   last = ts;
