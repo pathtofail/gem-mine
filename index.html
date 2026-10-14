@@ -132,16 +132,16 @@ const CAPS = [0, 140, 130, 140, 130, 130, 120, 120, 130, 130, 130, 130, 120, 120
 const TIMES = [240, 115, 210, 145, 135, 115, 145, 105, 130, 175, 140, 125, 150, 145, 145, 155, 185, 125, 195, 160, 175, 305, 230, 155, 155, 150, 240, 230, 225, 220, 205, 120, 210, 190, 135, 115, 185, 100, 105, 170, 205, 170, 360, 350, 200, 270, 235, 355, 240, 310];
 
 const LEVELS = [
-  {name:"First pour", time:600, beltCap:100, speed:10, carts:[[], [], [], []], lanes:[["R", 60], ["R", 40], ["B", 60], ["B", 40]], par:4},
-  {name:"Dig out", time:600, beltCap:130, speed:13, carts:[[["R", 40], ["B", 30]], [["B", 30], ["G", 40]], [], []], lanes:[["R", 60], ["B", 40], ["G", 60], null], par:5},
-  {name:"Fill it up", time:600, beltCap:90, speed:9, carts:[[], [["G", 10]], [["G", 90]], [["B", 20], ["Y", 30], ["B", 20]]], lanes:[["B", 60], ["Y", 30], null, ["Y", 40]], par:6},
-  {name:"Painted cart", time:600, beltCap:110, speed:11, carts:[[["B", 10], ["P", 10], ["Y", 60]], [["Y", 10], ["P", 80]], [], [["B", 40]]], lanes:[["B", 50], null, ["P", 10], ["Y", 30]], reserve:[null, null, "B", null], hint:"A painted cart only takes its own color.", par:8},
-  {name:"Tidy up", time:600, beltCap:130, speed:13, carts:[[["Y", 40], ["R", 50]], [["Y", 60], ["G", 20], ["P", 10]], [["P", 30], ["R", 50]], [], []], lanes:[null, ["P", 60], ["G", 30], ["G", 50], null], par:8},
-  {name:"Layers", time:600, beltCap:110, speed:11, carts:[[], [], [["Y", 20], ["P", 20], ["B", 30]], [["B", 10], ["P", 80]]], lanes:[[["Y", 10], ["Y", 10]], null, ["Y", 60], ["B", 60]], hint:"A layered lane opens one layer per tap.", par:7},
-  {name:"Chained", time:600, beltCap:120, speed:12, carts:[[["Y", 10], ["P", 80]], [["B", 50]], [["B", 20], ["P", 10], ["Y", 60]], []], lanes:[null, ["Y", 30], ["B", 30], ["P", 10]], chain:{3:"B"}, hint:"A chained cart opens when its color is sealed.", par:8},
-  {name:"Assigned seats", time:600, beltCap:110, speed:11, carts:[[["B", 10], ["G", 80]], [["B", 90]], [], [["G", 10], ["Y", 40], ["R", 20], ["G", 10]], []], lanes:[null, null, ["R", 40], ["R", 40], ["Y", 60]], reserve:[null, null, "R", null, "R"], hint:"Both empty carts are painted. Each takes only its own color.", par:9},
-  {name:"Deep lane", time:600, beltCap:140, speed:14, carts:[[["B", 10], ["R", 40], ["B", 30]], [["G", 80]], [], [["R", 60], ["G", 20]], []], lanes:[[["P", 20], ["B", 20], ["P", 20]], null, ["B", 40], ["P", 60], null], reserve:[null, null, null, null, "P"], par:8},
-  {name:"Deep mine", time:600, beltCap:130, speed:13, carts:[[], [], [["B", 10], ["P", 70], ["Y", 10]], [["P", 30], ["B", 30]], [["R", 90]]], lanes:[[["Y", 20], ["R", 10], ["Y", 10]], null, ["Y", 60], null, ["B", 60]], reserve:["B", null, null, null, null], par:8}
+  {name:"First pour", time:600, beltCap:100, speed:30, carts:[[], [], [], []], lanes:[["R", 60], ["R", 40], ["B", 60], ["B", 40]], par:4},
+  {name:"Dig out", time:600, beltCap:130, speed:39, carts:[[["R", 40], ["B", 30]], [["B", 30], ["G", 40]], [], []], lanes:[["R", 60], ["B", 40], ["G", 60], null], par:5},
+  {name:"Fill it up", time:600, beltCap:90, speed:27, carts:[[], [["G", 10]], [["G", 90]], [["B", 20], ["Y", 30], ["B", 20]]], lanes:[["B", 60], ["Y", 30], null, ["Y", 40]], par:6},
+  {name:"Painted cart", time:600, beltCap:110, speed:33, carts:[[["B", 10], ["P", 10], ["Y", 60]], [["Y", 10], ["P", 80]], [], [["B", 40]]], lanes:[["B", 50], null, ["P", 10], ["Y", 30]], reserve:[null, null, "B", null], hint:"A painted cart only takes its own color.", par:8},
+  {name:"Tidy up", time:600, beltCap:130, speed:39, carts:[[["Y", 40], ["R", 50]], [["Y", 60], ["G", 20], ["P", 10]], [["P", 30], ["R", 50]], [], []], lanes:[null, ["P", 60], ["G", 30], ["G", 50], null], par:8},
+  {name:"Layers", time:600, beltCap:110, speed:33, carts:[[], [], [["Y", 20], ["P", 20], ["B", 30]], [["B", 10], ["P", 80]]], lanes:[[["Y", 10], ["Y", 10]], null, ["Y", 60], ["B", 60]], hint:"A layered lane opens one layer per tap.", par:7},
+  {name:"Chained", time:600, beltCap:120, speed:36, carts:[[["Y", 10], ["P", 80]], [["B", 50]], [["B", 20], ["P", 10], ["Y", 60]], []], lanes:[null, ["Y", 30], ["B", 30], ["P", 10]], chain:{3:"B"}, hint:"A chained cart opens when its color is sealed.", par:8},
+  {name:"Assigned seats", time:600, beltCap:110, speed:33, carts:[[["B", 10], ["G", 80]], [["B", 90]], [], [["G", 10], ["Y", 40], ["R", 20], ["G", 10]], []], lanes:[null, null, ["R", 40], ["R", 40], ["Y", 60]], reserve:[null, null, "R", null, "R"], hint:"Both empty carts are painted. Each takes only its own color.", par:9},
+  {name:"Deep lane", time:600, beltCap:140, speed:42, carts:[[["B", 10], ["R", 40], ["B", 30]], [["G", 80]], [], [["R", 60], ["G", 20]], []], lanes:[[["P", 20], ["B", 20], ["P", 20]], null, ["B", 40], ["P", 60], null], reserve:[null, null, null, null, "P"], par:8},
+  {name:"Deep mine", time:600, beltCap:130, speed:39, carts:[[], [], [["B", 10], ["P", 70], ["Y", 10]], [["P", 30], ["B", 30]], [["R", 90]]], lanes:[[["Y", 20], ["R", 10], ["Y", 10]], null, ["Y", 60], null, ["B", 60]], reserve:["B", null, null, null, null], par:8}
 ];
 
 // ---------- Canvas / layout ----------
