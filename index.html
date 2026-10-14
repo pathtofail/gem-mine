@@ -624,7 +624,6 @@ function update(dt) {
     checkWin();
     const calm = !S.pours.length && !S.flights.length && !S.carts.some(c => c.inflight > 0 || c.pouring);
     S.calmT = calm ? S.calmT + dt : 0;
-    if (S.status === 'play' && calm && S.moves >= S.limit && S.calmT > loopSeconds() * 1.8) { S.status = 'lost'; buzz([30, 40, 30]); }
     if (S.status === 'play' && calm && !S.checked && S.calmT > loopSeconds() * 1.8) { S.checked = true; }
   }
 }
@@ -814,10 +813,6 @@ function drawHud() {
   S.buttons.push({ x: ux - 4, y: by - 4, w: bs + 8, h: bs + 8, fn: undo });
   S.buttons.push({ x: rx - 4, y: by - 4, w: bs + 8, h: bs + 8, fn: () => loadLevel(S.level) });
 
-  // moves left
-  { const left = Math.max(0, S.limit - S.moves), w = 150, x = LW / 2 - w / 2, y = 70, low = left <= 1;
-    rr(x, y, w, 18, 9); ctx.fillStyle = 'rgba(0,0,0,0.28)'; ctx.fill(); ctx.lineWidth = 1.5; ctx.strokeStyle = low ? 'rgba(255,140,120,0.9)' : 'rgba(255,255,255,0.22)'; ctx.stroke();
-    txt('MOVES LEFT', x + 10, y + 9.5, 9.5, UI.dim, 'left', 800); txt(String(left), x + w - 10, y + 9.5, 14, low ? '#ff9a7a' : UI.amber, 'right', 900); }
   txt('Seal one cart for each color', 14, 57, 12.5, UI.soft, 'left', 700);
   const sealedColors = new Set(S.carts.filter(c => c.sealed).map(c => c.segs[0].col));
   const pw = 26, startX = LW - 14 - S.colors.length * pw;
