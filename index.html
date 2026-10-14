@@ -132,16 +132,16 @@ const CAPS = [0, 140, 130, 140, 130, 130, 120, 120, 130, 130, 130, 130, 120, 120
 const TIMES = [240, 115, 210, 145, 135, 115, 145, 105, 130, 175, 140, 125, 150, 145, 145, 155, 185, 125, 195, 160, 175, 305, 230, 155, 155, 150, 240, 230, 225, 220, 205, 120, 210, 190, 135, 115, 185, 100, 105, 170, 205, 170, 360, 350, 200, 270, 235, 355, 240, 310];
 
 const LEVELS = [
-  {name:"First pour", time:600, beltCap:100, speed:10, carts:[[], [], [], []], lanes:[["R", 60], ["R", 40], ["B", 60], ["B", 40]]},
-  {name:"Dig out", time:600, beltCap:100, speed:10, carts:[[["R", 40], ["B", 30]], [["B", 30], ["G", 40]], [], []], lanes:[["R", 60], ["B", 40], ["G", 60], null]},
-  {name:"Belt limit", time:600, beltCap:50, speed:5, carts:[[["P", 60], ["R", 30]], [], [["P", 20], ["R", 50]], [["G", 60], ["P", 20]]], lanes:[["R", 20], ["G", 20], ["G", 20], null], hint:"The belt only holds 50 gems."},
-  {name:"Painted cart", time:600, beltCap:60, speed:6, carts:[[["R", 30], ["G", 10], ["R", 40]], [], [["R", 30], ["Y", 40]], [["G", 70]]], lanes:[["G", 20], null, ["Y", 30], ["Y", 30]], reserve:[null, "R", null, null], hint:"A painted cart only takes its own color."},
-  {name:"Tidy up", time:600, beltCap:100, speed:10, carts:[[["G", 70], ["B", 20]], [], [["R", 40], ["P", 40], ["G", 10]], [["R", 60], ["G", 20]], []], lanes:[["B", 60], null, ["P", 60], ["B", 20], null]},
-  {name:"Layers", time:600, beltCap:70, speed:7, carts:[[], [["Y", 20], ["P", 40]], [["R", 40], ["P", 10], ["Y", 20], ["R", 10]], []], lanes:[null, [["P", 50], ["Y", 10]], ["R", 50], ["Y", 50]], hint:"A layered lane opens one layer per tap."},
-  {name:"Chained", time:600, beltCap:80, speed:8, carts:[[], [["G", 40], ["R", 20]], [["G", 40], ["P", 50]], [["R", 50]]], lanes:[["G", 20], null, ["R", 30], ["P", 50]], chain:{0:"P"}, hint:"A chained cart opens when its color is sealed."},
-  {name:"Deep lane", time:600, beltCap:70, speed:7, carts:[[], [["R", 60], ["P", 30]], [], [["P", 20], ["G", 60]], [["G", 20], ["B", 30], ["R", 10], ["P", 10], ["R", 20]]], lanes:[[["G", 20], ["B", 10], ["R", 10]], null, ["P", 40], ["B", 60], null], reserve:["B", null, null, null, null]},
-  {name:"Assigned seats", time:600, beltCap:80, speed:8, carts:[[["G", 50], ["P", 40]], [["P", 10], ["R", 50], ["G", 10]], [["P", 50], ["G", 40]], [], []], lanes:[["B", 50], ["R", 50], null, ["B", 50], null], reserve:[null, null, null, "G", "P"], hint:"Both empty carts are painted. Each takes only its own color."},
-  {name:"Deep mine", time:600, beltCap:80, speed:8, carts:[[["G", 80]], [], [["P", 70], ["Y", 20]], [["R", 20], ["B", 70]], [], [["R", 40], ["B", 10], ["Y", 40]]], lanes:[null, [["R", 40], ["B", 20]], ["P", 30], [["G", 20], ["Y", 10], ["Y", 30]], null, null], reserve:[null, "P", null, null, null, null], chain:{4:"B"}}
+  {name:"First pour", time:600, beltCap:100, speed:10, carts:[[], [], [], []], lanes:[["R", 60], ["R", 40], ["B", 60], ["B", 40]], par:4},
+  {name:"Dig out", time:600, beltCap:130, speed:13, carts:[[["R", 40], ["B", 30]], [["B", 30], ["G", 40]], [], []], lanes:[["R", 60], ["B", 40], ["G", 60], null], par:5},
+  {name:"Fill it up", time:600, beltCap:90, speed:9, carts:[[], [["G", 10]], [["G", 90]], [["B", 20], ["Y", 30], ["B", 20]]], lanes:[["B", 60], ["Y", 30], null, ["Y", 40]], par:6},
+  {name:"Painted cart", time:600, beltCap:110, speed:11, carts:[[["B", 10], ["P", 10], ["Y", 60]], [["Y", 10], ["P", 80]], [], [["B", 40]]], lanes:[["B", 50], null, ["P", 10], ["Y", 30]], reserve:[null, null, "B", null], hint:"A painted cart only takes its own color.", par:8},
+  {name:"Tidy up", time:600, beltCap:130, speed:13, carts:[[["Y", 40], ["R", 50]], [["Y", 60], ["G", 20], ["P", 10]], [["P", 30], ["R", 50]], [], []], lanes:[null, ["P", 60], ["G", 30], ["G", 50], null], par:8},
+  {name:"Layers", time:600, beltCap:110, speed:11, carts:[[], [], [["Y", 20], ["P", 20], ["B", 30]], [["B", 10], ["P", 80]]], lanes:[[["Y", 10], ["Y", 10]], null, ["Y", 60], ["B", 60]], hint:"A layered lane opens one layer per tap.", par:7},
+  {name:"Chained", time:600, beltCap:120, speed:12, carts:[[["Y", 10], ["P", 80]], [["B", 50]], [["B", 20], ["P", 10], ["Y", 60]], []], lanes:[null, ["Y", 30], ["B", 30], ["P", 10]], chain:{3:"B"}, hint:"A chained cart opens when its color is sealed.", par:8},
+  {name:"Assigned seats", time:600, beltCap:110, speed:11, carts:[[["B", 10], ["G", 80]], [["B", 90]], [], [["G", 10], ["Y", 40], ["R", 20], ["G", 10]], []], lanes:[null, null, ["R", 40], ["R", 40], ["Y", 60]], reserve:[null, null, "R", null, "R"], hint:"Both empty carts are painted. Each takes only its own color.", par:9},
+  {name:"Deep lane", time:600, beltCap:140, speed:14, carts:[[["B", 10], ["R", 40], ["B", 30]], [["G", 80]], [], [["R", 60], ["G", 20]], []], lanes:[[["P", 20], ["B", 20], ["P", 20]], null, ["B", 40], ["P", 60], null], reserve:[null, null, null, null, "P"], par:8},
+  {name:"Deep mine", time:600, beltCap:130, speed:13, carts:[[], [], [["B", 10], ["P", 70], ["Y", 10]], [["P", 30], ["B", 30]], [["R", 90]]], lanes:[[["Y", 20], ["R", 10], ["Y", 10]], null, ["Y", 60], null, ["B", 60]], reserve:["B", null, null, null, null], par:8}
 ];
 
 // ---------- Canvas / layout ----------
@@ -228,7 +228,7 @@ function resize() {
   if (!S) return;
 
   const L = LEVELS[S.level];
-  const hudH = 74;
+  const hudH = 92;
   const lanesH = LH < 700 ? 100 : LH > 820 ? 136 : 118;
   const x0 = BW / 2 + 5, x1 = LW - BW / 2 - 5;
   const y0 = hudH + BW / 2 + 8;
@@ -309,7 +309,7 @@ function loadLevel(i) {
     undos: CFG.UNDOS, history: [],
     combo: 0, comboT: 0, shakeT: 0,
     particles: [], floats: [], taps: [], sparks: [], confetti: [],
-    toast: null, buttons: [], stars: 0,
+    toast: null, buttons: [], stars: 0, stuck: false, checked: false, calmT: 0, moves: 0, par: L.par || 12, limit: Math.ceil((L.par || 12) * 1.4) + 2,
   };
   resize();
   resetGates();
@@ -476,18 +476,87 @@ function segsMerged(c) {
 }
 function snapshot() {
   S.history.push(JSON.stringify({
-    cells: S.cells, phase: S.phase, pours: S.pours,
+    moves: S.moves, cells: S.cells, phase: S.phase, pours: S.pours,
     carts: S.carts.map(c => ({ segs: segsMerged(c), sealed: c.sealed, chainCol: c.chainCol })),
     lanes: S.lanes.map(l => l && { chunks: l.chunks, open: l.open, total: l.total }),
   }));
   if (S.history.length > CFG.UNDOS) S.history.shift();
 }
 
+// ---------- Is there still a way to win? (runs when the belt is calm; says so only when it has looked at every route) ----------
+function gmStuck(maxStates = 40000, maxMs = 450) {
+  const N = CFG.BELT_CAP, CAP = CFG.CART_CAP, t0 = performance.now();
+  if (S.carts.some(c => c.locked)) return false;                       // a coin-locked spare cart can still be bought
+  if (S.flights.length || S.pours.length || S.carts.some(c => c.inflight > 0 || c.pouring) || S.cells.some(g => g && g.pending)) return false;   // gems are still moving: never judge a position mid-air
+  const belt = {}; S.cells.forEach(g => { if (g) belt[g.col] = (belt[g.col] || 0) + 1; });
+  const s0 = {
+    carts: S.carts.map(c => ({ segs: c.segs.map(x => [x.col, x.amt]), sealed: c.sealed, reserve: c.reserve || null, chain: c.chainCol || null })),
+    lanes: S.lanes.map(l => (l && l.chunks.length) ? l.chunks.map(x => [x.col, x.amt]) : null),
+    belt: Object.keys(belt).map(col => ({ col, amt: belt[col], origin: -1 })),
+  };
+  const clone = s => ({ carts: s.carts.map(c => ({ segs: c.segs.map(x => [x[0], x[1]]), sealed: c.sealed, reserve: c.reserve, chain: c.chain })), lanes: s.lanes.map(l => l && l.map(x => [x[0], x[1]])), belt: s.belt.map(b => ({ col: b.col, amt: b.amt, origin: b.origin })) });
+  const total = c => c.segs.reduce((a, x) => a + x[1], 0), top = c => c.segs.length ? c.segs[c.segs.length - 1][0] : null;
+  const used = s => s.belt.reduce((a, b) => a + b.amt, 0), locked = c => !!c.chain;
+  const accepts = (s, c, col) => {
+    if (c.sealed || locked(c) || total(c) >= CAP) return false;
+    if (c.reserve && col !== c.reserve) return false;
+    const tc = top(c);
+    if (tc) {
+      if (tc !== col) return false;
+      const mine = total(c), ci = s.carts.indexOf(c);
+      return !s.carts.some((o, oi) => o !== c && !o.sealed && !locked(o) && top(o) === col && total(o) < CAP && (total(o) > mine || (total(o) === mine && oi < ci)));
+    }
+    return !s.carts.some(o => o !== c && !o.sealed && !locked(o) && top(o) === col && total(o) < CAP);
+  };
+  const give = (s, bi, i) => {                                          // cart i takes what it can from belt batch bi
+    const b = s.belt[bi], c = s.carts[i], take = Math.min(b.amt, CAP - total(c)); if (take <= 0) return false;
+    b.amt -= take; const tp = c.segs[c.segs.length - 1];
+    if (tp && tp[0] === b.col) tp[1] += take; else c.segs.push([b.col, take]);
+    if (total(c) >= CAP && c.segs.length === 1) { c.sealed = true; for (const o of s.carts) if (o.chain === b.col) o.chain = null; }
+    return true;
+  };
+  // let every gem on the belt settle. When two carts could race for the same gems, every way it could go is explored.
+  const settleAll = (s, out) => {
+    for (let pass = 0; pass < 2; pass++) {
+      let changed = true, guard = 0;
+      while (changed && guard++ < 60) {
+        changed = false;
+        for (let bi = 0; bi < s.belt.length; bi++) {
+          const b = s.belt[bi]; if (b.amt <= 0) continue;
+          const takers = s.carts.map((c, i) => i).filter(i => (pass === 1 || i !== b.origin) && accepts(s, s.carts[i], b.col));
+          if (!takers.length) continue;
+          const ne = takers.filter(i => s.carts[i].segs.length);
+          if (ne.length > 1) { for (const i of ne) { const t = clone(s); if (give(t, bi, i)) { t.belt = t.belt.filter(x => x.amt > 0); settleAll(t, out); } } return; }
+          if (give(s, bi, ne.length ? ne[0] : takers[0])) changed = true;
+        }
+        s.belt = s.belt.filter(b => b.amt > 0);
+      }
+    }
+    out.push(s);
+  };
+  const key = s => s.carts.map(c => (c.sealed ? 'S' : '') + (c.chain || '') + c.segs.map(x => x[0] + x[1]).join('')).join('|') + '/' + s.lanes.map(l => l ? l.map(x => x[0] + x[1]).join('') : '-').join('|') + '/' + s.belt.map(b => b.col + b.amt + ':' + b.origin).sort().join(',');
+  const won = s => { const sc = new Set(s.carts.filter(c => c.sealed).map(c => c.segs[0][0])); return S.colors.every(c => sc.has(c)); };
+  const seen = new Set(), queue = [];
+  const add = list => { for (const u of list) { const k = key(u); if (!seen.has(k)) { seen.add(k); queue.push(u); } } };
+  const first = []; settleAll(s0, first); add(first);
+  let qi = 0;
+  while (qi < queue.length) {
+    const s = queue[qi++]; if (won(s)) return false;
+    if (seen.size > maxStates || performance.now() - t0 > maxMs) return false;     // gave up: never claim stuck
+    const free = N - used(s), next = [];
+    s.carts.forEach((c, i) => { if (c.sealed || locked(c) || !c.segs.length) return; const g = c.segs[c.segs.length - 1]; if (g[1] > free) return; const t = clone(s), tg = t.carts[i].segs.pop(); t.belt.push({ col: tg[0], amt: tg[1], origin: i }); next.push(t); });
+    s.lanes.forEach((l, i) => { if (!l || !l.length || l[0][1] > free) return; const t = clone(s), tg = t.lanes[i].shift(); if (!t.lanes[i].length) t.lanes[i] = null; t.belt.push({ col: tg[0], amt: tg[1], origin: -1 }); next.push(t); });
+    for (const t of next) { const r = []; settleAll(t, r); add(r); }
+  }
+  return true;                                                                      // looked at every route and none wins
+}
+
 function undo() {
-  if (S.status !== 'play') return;
+  if (S.status !== 'play' && S.status !== 'lost') return;
   if (!S.history.length || S.undos <= 0) { toast('Nothing to undo'); return; }
   const snap = JSON.parse(S.history.pop());
-  S.undos -= 1;
+  S.stuck = false; S.checked = false;
+  S.undos -= 1; S.moves = snap.moves; S.status = 'play';
   S.cells = snap.cells.map(g => g && Object.assign(g, { shift: 0, pop: 1, pending: false }));
   S.phase = snap.phase; S.pours = snap.pours; S.flights = [];
   S.carts.forEach(c => { c.pouring = false; c.inflight = 0; });
@@ -520,6 +589,7 @@ function burst(x, y, col, n) {
 
 function pressOut(i) {
   if (S.status !== 'play') return;
+  S.stuck = false; S.checked = false;
   const c = S.carts[i];
   if (c.sealed || c.pouring || isLocked(c) || !c.segs.length) return;
   if (c.inflight > 0) { toast('Wait for the gems to land'); return; }
@@ -528,7 +598,7 @@ function pressOut(i) {
     toast('Belt is full'); c.shake = 0.4; buzz(30);
     return;
   }
-  snapshot();
+  snapshot(); S.moves++;
   S.poured = true;
   c.pouring = true; c.acc = 0;
   startPour({ kind: 'cart', i, col: top.col, left: top.amt, pu: topU(i) });
@@ -537,13 +607,14 @@ function pressOut(i) {
 
 function unlockLane(i) {
   if (S.status !== 'play') return;
+  S.stuck = false; S.checked = false;
   const L = S.lanes[i];
   if (!L || L.open) return;
   if (freeSlots() < L.total) {
     toast('Not enough room on the belt'); L.shake = 0.4; buzz(30);
     return;
   }
-  snapshot();
+  snapshot(); S.moves++;
   S.laneUsed = true;
   L.open = true;
   startPour({ kind: 'lane', i, col: L.chunks[0].col, left: L.total, pu: botU(lay.cx(i)) });
@@ -569,7 +640,12 @@ function buyCart(i) {
 function accepts(c, col) {
   if (c.reserve && c.reserve !== col) return false;
   const tc = topColor(c);
-  if (tc) return tc === col;
+  if (tc) {
+    if (tc !== col) return false;
+    // when several carts are collecting one color, only the fullest catches it (so a color is never split between carts)
+    const mine = cartTotal(c) + c.inflight, ci = S.carts.indexOf(c);
+    return !S.carts.some((o, oi) => o !== c && !o.sealed && !isLocked(o) && topColor(o) === col && cartTotal(o) + o.inflight < CFG.CART_CAP && (cartTotal(o) + o.inflight > mine || (cartTotal(o) + o.inflight === mine && oi < ci)));
+  }
   return !S.carts.some(o => o !== c && !o.sealed && !isLocked(o) && topColor(o) === col && cartTotal(o) + o.inflight < CFG.CART_CAP);
 }
 
@@ -621,7 +697,7 @@ function checkWin() {
     S.status = 'won';
     for (let k = 0; k < 3; k++) confettiBurst(LW * (0.2 + 0.3 * k), LH * 0.55, S.colors[k % S.colors.length], 40, 1.4);
     S.undosUsed = CFG.UNDOS - S.undos;
-    S.stars = 3 - Math.min(2, S.undosUsed);              // stars reward clean play, never speed
+    S.stars = S.moves <= S.par + 1 ? 3 : S.moves <= Math.ceil(S.par * 1.25) + 1 ? 2 : 1;      // stars reward efficient play, never speed
     S.reward = levelReward(S.level, S.stars, !SAVE.stars[S.level]);
     SAVE.coins += S.reward;
     SAVE.stars[S.level] = Math.max(SAVE.stars[S.level] || 0, S.stars);
@@ -683,6 +759,10 @@ function update(dt) {
     runPours();
     runCollectors();
     checkWin();
+    const calm = !S.pours.length && !S.flights.length && !S.carts.some(c => c.inflight > 0 || c.pouring);
+    S.calmT = calm ? S.calmT + dt : 0;
+    if (S.status === 'play' && calm && S.moves >= S.limit && S.calmT > loopSeconds() * 1.8) { S.status = 'lost'; buzz([30, 40, 30]); }
+    if (S.status === 'play' && calm && !S.checked && S.calmT > loopSeconds() * 1.8) { S.checked = true; S.stuck = gmStuck(); }
   }
 }
 
@@ -934,7 +1014,11 @@ function drawHud() {
   S.buttons.push({ x: rx - 4, y: by - 4, w: bs + 8, h: bs + 8, fn: () => loadLevel(S.level) });
 
   // goal row: level name + one pip per color that still has to be sealed
-  txt('Seal one cart for each color', 14, 57, 12.5, '#e8d3b0', 'left', 700);
+  { const left = Math.max(0, S.limit - S.moves), w = 150, x = LW / 2 - w / 2, y = 70;
+    rr(x, y, w, 18, 9); ctx.fillStyle = 'rgba(20,10,4,0.55)'; ctx.fill(); ctx.lineWidth = 1.5; ctx.strokeStyle = left <= 2 ? '#ff9a7a' : 'rgba(224,176,112,0.6)'; ctx.stroke();
+    txt('MOVES LEFT', x + 10, y + 9.5, 9.5, '#a98a62', 'left', 800); txt(String(left), x + w - 10, y + 9.5, 14, left <= 2 ? '#ff9a7a' : '#ffe2a8', 'right', 900); }
+  if (S.stuck && S.status === 'play') txt('No way out from here. Try Undo \u21B6', 14, 57, 13, '#ff9a7a', 'left', 800, true);
+  else txt('Seal one cart for each color', 14, 57, 12.5, '#e8d3b0', 'left', 700);
   const sealedColors = new Set(S.carts.filter(c => c.sealed).map(c => c.segs[0].col));
   const pw = 26, startX = LW - 14 - S.colors.length * pw;
   S.colors.forEach((col, k) => {
@@ -1506,10 +1590,10 @@ function drawOverlay() {
   const won = S.status === 'won';
   const cy = LH / 2 - 50;
   panel(cx - Math.min(150, LW / 2 - 8), cy - 100, Math.min(300, LW - 16), 356);
-  txt(won ? 'Vein sorted!' : "Time's up", cx, cy - 40, 34, won ? '#ffd56b' : '#ff7b6b', 'center', 800);
+  txt(won ? 'Vein sorted!' : 'Out of moves', cx, cy - 40, 34, won ? '#ffd56b' : '#ff7b6b', 'center', 800);
   if (won) {
     for (let k = 0; k < 3; k++) txt('★', cx + (k - 1) * 46, cy + 4, 40, k < S.stars ? '#ffd56b' : '#4a3a28', 'center', 800);
-    txt(S.undosUsed ? `${S.undosUsed} undo${S.undosUsed > 1 ? 's' : ''} used` : 'No undos used!', cx, cy + 38, 14, '#e8d3b0', 'center', 600);
+    txt(`${S.moves} moves \u00B7 par ${S.par}`, cx, cy + 38, 14, '#e8d3b0', 'center', 700);
     drawCoin(cx - 34, cy + 68, 12);
     txt(`+${S.reward}`, cx - 16, cy + 68.5, 22, '#ffe08a', 'left', 800, true);
   } else {
@@ -1639,7 +1723,7 @@ function frame(ts) {
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
-if (DEV) window.game = { get S() { return S; }, CFG, LEVELS, SEEDS, TIMES, CAPS, makeLevel, pressOut, unlockLane, buyCart, undo, loadLevel, update: dt => update(dt), draw: () => draw() };
+if (DEV) window.game = { get S() { return S; }, CFG, LEVELS, SEEDS, TIMES, CAPS, makeLevel, pressOut, unlockLane, buyCart, undo, loadLevel, gmStuck, update: dt => update(dt), draw: () => draw() };
 </script>
 </body>
 </html>
